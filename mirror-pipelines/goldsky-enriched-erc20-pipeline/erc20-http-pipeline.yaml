@@ -1,0 +1,40 @@
+name: enriched-erc20-transfers-pipeline
+version: 1
+resource_size: s
+apiVersion: 3
+sources:
+  ethereum.erc20_transfers:
+    dataset_name: ethereum.erc20_transfers
+    version: 1.2.0
+    type: dataset
+    filter: address IN ('0x6b175474e89094c44da98b954eedeac495271d0f',
+                        '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48',
+                        '0xdac17f958d2ee523a2206206994597c13d831ec7',
+                        '0x4fabb145d64652a948d72533023f6e7a623c7c53',
+                        '0x5a98fcbea516cf06857215779fd812ca3bef1b32')
+transforms:
+  enrich_tokens_external_transform:
+    type: handler
+    primary_key: id
+    url: <your_endpoint>/transform
+    from: ethereum.erc20_transfers
+    schema_override:
+      sender: string
+      recipient: string
+      converted_amount: string
+      token_address: string
+      token_symbol: string
+      token_decimals: integer
+      address: null
+      amount: null
+      transaction_index: null
+      log_index: null
+sinks:
+  clickhouse_sink.enriched_erc20_transfers:
+    type: clickhouse
+    table: enriched_erc20_transfer
+    batch_size: 100000
+    secret_name: YOUR_SECRET
+    batch_flush_interval: '10000'
+    append_only_mode: true
+    from: enrich_tokens_external_transform

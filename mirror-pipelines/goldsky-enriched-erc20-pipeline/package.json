@@ -1,0 +1,15 @@
+{
+  "name": "goldsky-enriched-erc20-pipeline",
+  "version": "1.0.0",
+  "description": "Example pipeline definition using HTTP Handler Transforms",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node app.js"
+  },
+  "author": "JavierTrujilloG",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
