@@ -1,0 +1,42 @@
+name: decoding-contract-events
+apiVersion: 3
+sources:
+  my_base_raw_logs:
+    type: dataset
+    dataset_name: base.raw_logs
+    version: 1.0.0
+transforms:
+  friendtech_decoded:
+    primary_key: id
+    # Fetch the ABI from basescan, then use it to decode from the friendtech address.
+    sql: >
+      SELECT 
+        `id`,
+        _gs_log_decode(
+            _gs_fetch_abi('https://api.basescan.org/api?module=contract&action=getabi&address=0xcf205808ed36593aa40a44f10c7f7c2f67d4a4d4', 'etherscan'), 
+            `topics`, 
+            `data`
+        ) AS `decoded`, 
+        block_number, 
+        transaction_hash 
+      FROM my_base_raw_logs
+      WHERE address='0xcf205808ed36593aa40a44f10c7f7c2f67d4a4d4'
+  friendtech_clean:
+    primary_key: id
+    # Clean up the previous transform, unnest the values from the `decoded` object.
+    sql: >
+      SELECT 
+        `id`, 
+        decoded.event_params AS `event_params`, 
+        decoded.event_signature AS `event_signature`,
+        block_number,
+        transaction_hash
+        FROM friendtech_decoded 
+        WHERE decoded IS NOT NULL
+sinks:
+  friendtech_events:
+    secret_name: EXAMPLE_SECRET
+    type: postgres
+    from: friendtech_clean
+    schema: decoded_events
+    table: friendtech

@@ -1,0 +1,98 @@
+name: scroll-erc1155-transfers
+apiVersion: 3
+sources:
+  my_scroll_mainnet_raw_logs:
+    type: dataset
+    dataset_name: scroll_mainnet.raw_logs
+    version: 1.0.0
+transforms:
+  scroll_decoded:
+    primary_key: id
+    # Fetch the ABI from scrollscan for Rubyscore_Scroll token
+    sql: >
+      SELECT
+        *,
+        _gs_log_decode(
+            _gs_fetch_abi('https://api.scrollscan.com/api?module=contract&action=getabi&address=0xdc3d8318fbaec2de49281843f5bba22e78338146', 'etherscan'),
+            `topics`,
+            `data`
+        ) AS `decoded`
+        FROM my_scroll_mainnet_raw_logs
+  scroll_clean:
+    primary_key: id
+    # Clean up the previous transform, unnest the values from the `decoded` object
+    sql: >
+      SELECT
+        *,
+        decoded.event_params AS `event_params`,
+        decoded.event_signature AS `event_name`
+        FROM scroll_decoded
+        WHERE decoded IS NOT NULL
+  erc1155_transfer_single:
+    primary_key: id
+    sql: >
+      SELECT
+        id,
+        address AS contract_address,
+        lower(event_params[2]) AS sender,
+        lower(event_params[3]) AS recipient,
+        COALESCE(TRY_CAST(event_params[4] AS NUMERIC), -999) AS token_id,
+        COALESCE(TRY_CAST(event_params[5] AS NUMERIC), -999) AS amount,
+        block_number,
+        block_hash,
+        log_index,
+        transaction_hash,
+        transaction_index
+        FROM scroll_clean WHERE topics LIKE '0xc3d58168c5ae7397731d063d5bbf3d657854427343f4c083240f7aacaa2d0f62%'
+  erc1155_transfer_batch:
+    primary_key: id
+    sql: >
+      WITH transfer_batch_logs AS (
+        SELECT
+          *,
+          _gs_split_string_by(
+            REPLACE(TRIM(LEADING '[' FROM TRIM(TRAILING ']' FROM event_params[4])), ',', ' ')
+          ) AS token_ids,
+          _gs_split_string_by(
+            REPLACE(TRIM(LEADING '[' FROM TRIM(TRAILING ']' FROM event_params[5])), ',', ' ')
+          ) AS amounts
+        FROM
+          scroll_clean
+        WHERE topics LIKE '0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb%'
+        )
+      SELECT
+        id || '_' || CAST(t.idx AS STRING) AS `id`,
+        address AS contract_address,
+        lower(event_params[2]) AS sender,
+        lower(event_params[3]) AS recipient,
+        CAST(token_ids[t.idx] AS NUMERIC(78)) as token_id,
+        CAST(amounts[t.idx] AS NUMERIC(78)) as amount,
+        block_number,
+        block_hash,
+        log_index,
+        transaction_hash,
+        transaction_index
+        FROM transfer_batch_logs
+          CROSS JOIN UNNEST(
+            CAST(
+              _gs_generate_series(
+                CAST(1 AS BIGINT),
+                CAST(COALESCE(CARDINALITY(token_ids), 0) AS BIGINT)
+            ) AS ARRAY<INTEGER>
+          )
+          ) AS t (idx)
+  scroll_1155_transfers:
+    primary_key: id
+    sql: >
+      SELECT * FROM erc1155_transfer_single
+      UNION ALL
+      SELECT * FROM erc1155_transfer_batch WHERE amount > 0
+
+sinks:
+  scroll_1155_sink:
+    type: postgres
+    table: erc1155_transfers
+    schema: mirror
+    secret_name: <YOUR_SECRET>
+    description: Postgres sink for ERC1155 transfers
+    from: scroll_1155_transfers

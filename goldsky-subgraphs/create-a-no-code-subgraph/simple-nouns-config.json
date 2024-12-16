@@ -1,0 +1,42 @@
+{
+    "version": "1",
+    "name": "nouns/1.0.0",
+    "abis": {
+      "nouns": [
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "uint256",
+              "name": "tokenId",
+              "type": "uint256"
+            }
+          ],
+          "name": "Transfer",
+          "type": "event"
+        }
+      ]
+    },
+    "instances": [
+      {
+        "abi": "nouns",
+        "address": "0x9C8fF314C9Bc7F6e59A9d9225Fb22946427eDC03",
+        "startBlock": 12985438,
+        "chain": "mainnet"
+      }
+    ]
+  }
+  

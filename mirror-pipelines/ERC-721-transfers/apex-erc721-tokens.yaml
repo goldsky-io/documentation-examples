@@ -1,0 +1,18 @@
+name: apex-erc721-pipeline
+resource_size: s
+apiVersion: 3
+sources:
+  apex.erc721_transfers:
+    dataset_name: apex.erc721_transfers
+    version: 1.0.0
+    type: dataset
+    start_at: earliest
+transforms: {}
+sinks:
+  postgres_apex.erc721_transfers_public_apex_erc721_transfers:
+    type: postgres
+    table: apex_erc721_transfers
+    schema: public
+    secret_name: <YOUR_SECRET>
+    description: 'Postgres sink for Dataset: apex.erc721_transfers'
+    from: apex.erc721_transfers

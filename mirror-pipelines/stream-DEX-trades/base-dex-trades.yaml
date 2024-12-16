@@ -1,0 +1,76 @@
+name: base-dex-trades
+apiVersion: 3
+sources:
+  base_logs:
+    type: dataset
+    dataset_name: base.logs
+    version: 1.0.0
+    filter: topics like '0x783cca1c0412dd0d695e784568c96da2e9c22ff989357a2e8b1d9b2b4e6b7118%' OR topics like '0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67%'
+transforms:
+  factory_decoded:
+    primary_key: id
+    # Fetch the ABI of UniswapV3Factory in Base and use it to decode PoolCreated events
+    sql: >
+      SELECT 
+        `id`,
+        _gs_log_decode(
+            _gs_fetch_abi('https://gist.githubusercontent.com/JavierTrujilloG/7df78272e689bf102cbe97ae86607d94/raw/9733aaa132a2c3e82cccbe5b0681d3270d696c83/UniswapV3Factory-ABI.json', 'raw'), 
+            `topics`, 
+            `data`
+        ) AS `decoded`, 
+        block_number, 
+        transaction_hash 
+      FROM base_logs  
+  pool_decoded: 
+    primary_key: id
+    # Fetch the ABI of a UniswapV3Pool in Base and use it to decode Swap events
+    sql: >
+      SELECT 
+        `id`,
+        _gs_log_decode(
+            _gs_fetch_abi('https://gist.githubusercontent.com/JavierTrujilloG/d3d2d80fbfd3415dd8e11aa498bd0909/raw/b8df8303e51ac7ad9ac921f25bfa84936bb4bc63/UniswapV3Pool-ABI.json', 'raw'), 
+            `topics`, 
+            `data`
+        ) AS `decoded`, 
+        block_number, 
+        transaction_hash 
+      FROM base_logs
+  factory_clean:
+    primary_key: id
+    # Clean up the previous transform, unnest the values from the `decoded` object to get PoolCreated event data
+    sql: >
+      SELECT 
+        `id`, 
+        decoded.event_params AS `event_params`, 
+        decoded.event_signature AS `event_signature`,
+        block_number,
+        transaction_hash
+        FROM factory_decoded 
+        WHERE decoded IS NOT NULL
+        AND decoded.event_signature = 'PoolCreated'
+  pool_clean:
+    primary_key: id
+    # Clean up the previous transform, unnest the values from the `decoded` object to get Swap event data
+    sql: >
+      SELECT 
+        `id`, 
+        decoded.event_params AS `event_params`, 
+        decoded.event_signature AS `event_signature`,
+        block_number,
+        transaction_hash
+        FROM pool_decoded 
+        WHERE decoded IS NOT NULL
+        AND decoded.event_signature = 'Swap'
+sinks:
+  poolcreated_events_sink:
+    secret_name: <YOUR_SECRET>
+    type: postgres
+    schema: decoded_events
+    table: poolcreated
+    from: factory_clean
+  swaps_event_sink:
+    secret_name: <YOUR_SECRET>
+    type: postgres
+    schema: decoded_events
+    table: swaps
+    from: pool_clean

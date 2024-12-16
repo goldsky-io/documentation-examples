@@ -1,0 +1,35 @@
+sources:
+  - type: subgraphEntity
+    # The deployment IDs you gathered above. If you put multiple,
+    # they must have the same schema
+    deployments:
+      - id: QmPuXT3poo1T4rS6agZfT51ZZkiN3zQr6n5F2o1v9dRnnr
+      - id: QmWgW69CaTwJYwcSdu36mkXgwWY11RjvX1oMGykrxT3wDS
+    # A reference name, referred to later in the `sourceStreamName` of either a transformation or a sink.
+    referenceName: account
+    entity:
+      # The name of the entities
+      name: account
+  - type: subgraphEntity
+    deployments:
+      - id: QmPuXT3poo1T4rS6agZfT51ZZkiN3zQr6n5F2o1v9dRnnr
+      - id: QmWgW69CaTwJYwcSdu36mkXgwWY11RjvX1oMGykrxT3wDS
+    referenceName: market_daily_snapshot
+    entity:
+      name: market_daily_snapshot
+# We are just replicating data, so we don't need any SQL transforms.
+transforms: []
+sinks:
+  # In this example, we're using a postgres secret called SUPER_SECRET_SECRET.
+  # Feel free to change this out with any other type of sink.
+  - type: postgres
+    # The sourceStreamName matches the above `referenceNames`
+    sourceStreamName: account
+    table: qidao_accounts
+    schema: public
+    secretName: SUPER_SECRET_SECRET
+  - type: postgres
+    sourceStreamName: market_daily_snapshot
+    table: qidao_market_daily_snapshot
+    schema: public
+    secretName: SUPER_SECRET_SECRET

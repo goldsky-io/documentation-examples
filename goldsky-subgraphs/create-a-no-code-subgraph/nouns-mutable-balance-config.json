@@ -1,0 +1,89 @@
+{
+    "version": "1",
+    "name": "nouns/1.0.0",
+    "abis": {
+      "nouns": [
+        {
+          "anonymous": false,
+          "inputs": [
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "from",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "address",
+              "name": "to",
+              "type": "address"
+            },
+            {
+              "indexed": true,
+              "internalType": "uint256",
+              "name": "tokenId",
+              "type": "uint256"
+            }
+          ],
+          "name": "Transfer",
+          "type": "event"
+        },
+        {
+          "inputs": [
+            { "internalType": "address", "name": "owner", "type": "address" }
+          ],
+          "name": "balanceOf",
+          "outputs": [
+            { "internalType": "uint256", "name": "", "type": "uint256" }
+          ],
+          "stateMutability": "view",
+          "type": "function"
+        }
+      ]
+    },
+    "instances": [
+      {
+        "abi": "nouns",
+        "address": "0x9C8fF314C9Bc7F6e59A9d9225Fb22946427eDC03",
+        "startBlock": 12985438,
+        "chain": "mainnet",
+        "enrich": {
+          "handlers": {
+            "Transfer(indexed address,indexed address,indexed uint256)": {
+              "calls": {
+                "from_balance": {
+                  "name": "balanceOf",
+                  "params": "event.params.from",
+                  "required": true
+                },
+                "to_balance": {
+                  "name": "balanceOf",
+                  "params": "event.params.to",
+                  "required": true
+                }
+              },
+              "entities": {
+                "Balance": [
+                  {
+                    "id": "event.params.from.toHexString()",
+                    "explicit_id": true,
+                    "mapping": {
+                      "balance uint256": "calls.from_balance"
+                    }
+                  },
+                  {
+                    "id": "event.params.to.toHexString()",
+                    "explicit_id": true,
+                    "mapping": {
+                      "balance uint256": "calls.to_balance"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+  

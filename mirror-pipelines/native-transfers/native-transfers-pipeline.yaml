@@ -1,0 +1,45 @@
+name: native-transfers
+apiVersion: 3
+sources:
+  my_ethereum_raw_traces:
+    dataset_name: ethereum.raw_traces
+    version: 1.1.0
+    type: dataset
+    start_at: earliest
+transforms:
+  ethereum_eth_transfers_transform:
+    primary_key: id
+    description: ETH Transfers transform
+    sql: >
+      SELECT
+        id,
+        block_number,
+        block_hash,
+        block_timestamp,
+        transaction_hash,
+        transaction_index,
+        from_address,
+        to_address,
+        CASE
+            WHEN trace_address <> '' THEN 'Internal TX'
+            ELSE 'EOA TX'
+        END AS tx_type,
+        CASE
+            WHEN block_number <= 16239999 THEN COALESCE(TRY_CAST(`value` AS DECIMAL(100)) / 1e9, 0)
+            ELSE COALESCE(TRY_CAST(`value` AS DECIMAL(100)), 0)
+        END AS `value`,
+        call_type,
+        trace_address,
+        status
+      FROM
+        my_ethereum_raw_traces
+      WHERE
+        call_type <> 'delegatecall' and `value` > 0 and status = 1;
+sinks:
+  postgres_ethereum.eth_transfers:
+    type: postgres
+    table: eth_transfers
+    schema: public
+    secret_name: <YOUR_SECRET>
+    description: "Postgres sink for ethereum.eth_transfers"
+    from: ethereum_eth_transfers_transform

@@ -1,0 +1,20 @@
+name: syncing-a-subgraph-into-postgres
+apiVersion: 3
+sources:
+  polygon.fixed_product_market_maker:
+    type: subgraph_entity
+    name: fixed_product_market_maker
+    subgraphs:
+    - name: polymarket
+      version: 1.0.0
+transforms:
+  negative_fpmm_scaled_liquidity_parameter:
+    sql: SELECT id FROM polygon.fixed_product_market_maker WHERE scaled_liquidity_parameter < 0
+    primary_key: id
+sinks:
+  postgres_polygon_sink:
+    type: postgres
+    from: negative_fpmm_scaled_liquidity_parameter
+    table: test_negative_fpmm_scaled_liquidity_parameter
+    schema: public
+    secret_name: API_POSTGRES_CREDENTIALS

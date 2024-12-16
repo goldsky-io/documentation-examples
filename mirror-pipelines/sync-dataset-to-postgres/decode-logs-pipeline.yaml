@@ -1,0 +1,31 @@
+name: decoded-logs-pipeline
+apiVersion: 3
+sources:
+  my_ethereum_decoded_logs:
+    dataset_name: ethereum.decoded_logs
+    version: 1.0.0
+    type: dataset
+    start_at: latest
+
+transforms:
+  logs:
+    sql: |
+      SELECT
+          id,
+          address,
+          event_signature,
+          event_params,
+          raw_log.block_number as block_number,
+          raw_log.block_hash as block_hash,
+          raw_log.transaction_hash as transaction_hash
+      FROM
+          my_ethereum_decoded_logs
+    primary_key: id
+
+sinks:
+  logs_sink:
+    type: postgres
+    table: eth_logs
+    schema: goldsky
+    secret_name: API_POSTGRES_CREDENTIALS
+    from: logs

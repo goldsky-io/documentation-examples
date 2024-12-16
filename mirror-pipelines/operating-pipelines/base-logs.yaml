@@ -1,0 +1,21 @@
+name: base-logs-pipeline
+resource_size: s
+apiVersion: 3
+sources:
+  base.logs:
+    dataset_name: base.logs
+    version: 1.0.0
+    type: dataset
+    description: Enriched logs for events emitted from contracts. Contains the
+      contract address, data, topics, decoded event and metadata for blocks and
+      transactions.
+    display_name: Logs
+transforms: {}
+sinks:
+  postgres_base_logs:
+    type: postgres
+    table: base_logs
+    schema: public
+    secret_name: GOLDSKY_SECRET
+    description: "Postgres sink for: base.logs"
+    from: base.logs
