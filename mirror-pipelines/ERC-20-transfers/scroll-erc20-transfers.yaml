@@ -1,0 +1,57 @@
+name: scroll-erc20-transfers
+apiVersion: 3
+sources:
+  my_scroll_mainnet_raw_logs:
+    type: dataset
+    dataset_name: scroll_mainnet.raw_logs
+    version: 1.0.0
+transforms:
+  scroll_decoded:
+    primary_key: id
+    # Fetch the ABI from scrollscan for USDT
+    sql: >
+      SELECT
+        *,
+        _gs_log_decode(
+            _gs_fetch_abi('https://api.scrollscan.com/api?module=contract&action=getabi&address=0xc7d86908ccf644db7c69437d5852cedbc1ad3f69', 'etherscan'),
+            `topics`,
+            `data`
+        ) AS `decoded`
+        FROM my_scroll_mainnet_raw_logs
+        WHERE topics LIKE '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef%'
+        AND SPLIT_INDEX(topics, ',', 3) IS NULL
+  scroll_clean:
+    primary_key: id
+    # Clean up the previous transform, unnest the values from the `decoded` object
+    sql: >
+      SELECT
+        *,
+        decoded.event_params AS `event_params`,
+        decoded.event_signature AS `event_name`
+        FROM scroll_decoded
+        WHERE decoded IS NOT NULL
+        AND decoded.event_signature = 'Transfer'
+  scroll_20_transfers:
+    primary_key: id
+    sql: >
+      SELECT
+        id,
+        address AS token_id,
+        lower(event_params[1]) AS sender,
+        lower(event_params[2]) AS recipient,
+        lower(event_params[3]) AS `value`,
+        event_name,
+        block_number,
+        block_hash,
+        log_index,
+        transaction_hash,
+        transaction_index
+        FROM scroll_clean
+sinks:
+  scroll_20_sink:
+    type: postgres
+    table: erc20_transfers
+    schema: mirror
+    secret_name: <YOUR_SECRET>
+    description: Postgres sink for ERC20 transfers
+    from: scroll_20_transfers

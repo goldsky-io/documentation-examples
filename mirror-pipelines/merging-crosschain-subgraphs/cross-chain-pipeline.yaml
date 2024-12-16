@@ -1,0 +1,33 @@
+name: poap-extended-1
+apiVersion: 3
+sources:
+  hashflow_cross_chain.pool_created:
+    type: subgraph_entity
+    name: pool_created
+    subgraphs:
+      - name: polymarket
+        version: 1.0.0
+      - name: hashflow
+        version: 1.0.0
+  hashflow_cross_chain.update_router_permissions:
+    type: subgraph_entity
+    name: update_router_permissions
+    subgraphs:
+      - name: polymarket
+        version: 1.0.0
+      - name: hashflow
+        version: 1.0.0
+transforms: {}
+sinks:
+  pool_created_sink:
+    type: postgres
+    from: hashflow_cross_chain.pool_created
+    table: test_pool_created
+    schema: public
+    secret_name: API_POSTGRES_CREDENTIALS
+  update_router_permissions_sink:
+    type: postgres
+    from: hashflow_cross_chain.update_router_permissions
+    table: test_update_router_permissions
+    schema: public
+    secret_name: API_POSTGRES_CREDENTIALS

@@ -1,0 +1,43 @@
+name: decoding-traces
+apiVersion: 3
+sources:
+  my_base_raw_traces:
+    type: dataset
+    dataset_name: base.raw_traces
+    version: 1.0.0
+transforms:
+  friendtech_decoded:
+    primary_key: id
+    # Fetch the ABI from basescan, then use it to decode from the friendtech address.
+    sql: >
+      SELECT 
+        `id`,
+        _gs_tx_decode(
+            _gs_fetch_abi('https://api.basescan.org/api?module=contract&action=getabi&address=0xcf205808ed36593aa40a44f10c7f7c2f67d4a4d4', 'etherscan'), 
+            `input`, 
+            `output`
+        ) AS `decoded`, 
+        block_number, 
+        transaction_hash 
+      FROM my_base_raw_traces
+      WHERE address='0xcf205808ed36593aa40a44f10c7f7c2f67d4a4d4'
+  friendtech_clean:
+    primary_key: id
+    # Clean up the previous transform, unnest the values from the `decoded` object.
+    sql: >
+      SELECT 
+        `id`, 
+        decoded.function AS `function_name`,
+        decoded.decoded_inputs AS `decoded_inputs`,
+        decoded.decoded_outputs AS `decoded_outputs`,
+        block_number,
+        transaction_hash
+        FROM friendtech_decoded 
+        WHERE decoded IS NOT NULL
+sinks:
+  friendtech_logs:
+    secret_name: EXAMPLE_SECRET
+    type: postgres
+    from: friendtech_clean
+    schema: decoded_logs
+    table: friendtech
