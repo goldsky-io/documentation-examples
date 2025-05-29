@@ -1,28 +1,13 @@
-type Block @entity(immutable: true) {
-  id: ID!
-  number: BigInt!
-  timestamp: BigInt!
-  parentHash: String
-  author: String
-  difficulty: BigInt
-  totalDifficulty: BigInt
-  gasUsed: BigInt
-  gasLimit: BigInt
-  receiptsRoot: String
-  transactionsRoot: String
-  stateRoot: String
-  size: BigInt
-  unclesHash: String
-}
-
 type GasData @entity(timeseries: true) {
   id: Int8!
   gasUsed: BigInt!
+  block: BigInt!
   timestamp: Timestamp!
 }
 
 type GasStats @aggregation(intervals: ["day"], source: "GasData") {
   id: Int8!
   timestamp: Timestamp!
+  block: BigInt!
   totalGasUsed: BigDecimal! @aggregate(fn: "sum", arg: "gasUsed", cumulative: true)
 }
