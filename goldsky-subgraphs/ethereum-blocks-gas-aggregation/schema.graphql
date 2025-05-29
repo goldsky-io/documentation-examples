@@ -1,0 +1,13 @@
+type GasData @entity(timeseries: true) {
+  id: Int8!
+  gasUsed: BigInt!
+  block: BigInt!
+  timestamp: Timestamp!
+}
+
+type GasStats @aggregation(intervals: ["day"], source: "GasData") {
+  id: Int8!
+  timestamp: Timestamp!
+  block: BigInt!
+  totalGasUsed: BigDecimal! @aggregate(fn: "sum", arg: "gasUsed", cumulative: true)
+}
