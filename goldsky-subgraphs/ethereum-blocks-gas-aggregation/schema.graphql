@@ -8,6 +8,6 @@ type GasData @entity(timeseries: true) {
 type GasStats @aggregation(intervals: ["day"], source: "GasData") {
   id: Int8!
   timestamp: Timestamp!
-  block: BigInt!
+  latest_block: BigInt! @aggregate(fn: "last", arg: "block")
   totalGasUsed: BigDecimal! @aggregate(fn: "sum", arg: "gasUsed", cumulative: true)
 }
