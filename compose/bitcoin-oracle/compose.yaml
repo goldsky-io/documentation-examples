@@ -1,0 +1,12 @@
+name: "bitcoin-oracle"
+api_version: "stable"
+tasks:
+  - path: "./src/tasks/bitcoin-oracle.ts"
+    name: "bitcoin_oracle"
+    triggers:
+      - type: "cron"
+        expression: "* * * * *" # every minute
+    retry_config:
+      max_attempts: 2
+      initial_interval_ms: 1000
+      backoff_factor: 1
