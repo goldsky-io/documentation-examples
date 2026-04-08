@@ -59,8 +59,6 @@ compose run
 compose deploy
 ```
 
-> **Note:** Cloud deploy does not yet support contract codegen (tracked in [FOU-726](https://linear.app/goldsky/issue/FOU-726)). Until that's fixed, replace `oracle.write(...)` with `wallet.writeContract(chain, address, "write(bytes32,bytes32)", [...])` for cloud deployments.
-
 ## Project Structure
 
 ```
