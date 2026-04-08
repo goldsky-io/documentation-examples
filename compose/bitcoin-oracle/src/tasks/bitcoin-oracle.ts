@@ -9,6 +9,13 @@ export async function main(context: TaskContext) {
 
   const wallet = await evm.wallet({ name: "bitcoin-oracle-wallet" });
 
+  // Instantiate the typed contract (generated from src/contracts/PriceOracle.json)
+  const oracle = new evm.contracts.PriceOracle(
+    ORACLE_CONTRACT,
+    evm.chains.polygonAmoy,
+    wallet
+  );
+
   // Fetch Bitcoin price from CoinGecko API
   const response = await fetch<{ bitcoin: { usd: number } }>(
     "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
@@ -30,27 +37,8 @@ export async function main(context: TaskContext) {
   const timestampAsBytes32 = toBytes32(timestamp);
   const priceAsBytes32 = toBytes32(Math.round(bitcoinPrice * 100));
 
-  // Write the price on-chain
-  const onchainResponse = await wallet.writeContract(
-    evm.chains.polygonAmoy,
-    ORACLE_CONTRACT,
-    "write(bytes32,bytes32)",
-    [timestampAsBytes32, priceAsBytes32],
-    {
-      confirmations: 3,
-      onReorg: {
-        action: {
-          type: "replay",
-        },
-        depth: 200,
-      },
-    },
-    {
-      max_attempts: 3,
-      initial_interval_ms: 1000,
-      backoff_factor: 2,
-    }
-  );
+  // Write the price on-chain using the typed contract
+  const { hash, receipt } = await oracle.write(timestampAsBytes32, priceAsBytes32);
 
   // Store the price in a collection
   const priceHistory = await collection("bitcoin_prices");
@@ -61,7 +49,7 @@ export async function main(context: TaskContext) {
 
   return {
     success: true,
-    oracleHash: onchainResponse.hash,
+    oracleHash: hash,
     price: bitcoinPrice,
     timestamp,
     priceId: id,

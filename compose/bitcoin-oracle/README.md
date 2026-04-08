@@ -19,8 +19,8 @@ A [Compose](https://docs.goldsky.com/compose/introduction) example that fetches 
                                            │
                                            │ {bitcoin: {usd: 97234.50}}
                                            ▼
-┌─────────────┐   write(bytes32,    ┌─────────────┐
-│   On-chain  │   bytes32)          │   Compose   │
+┌─────────────┐   oracle.write(     ┌─────────────┐
+│   On-chain  │   timestamp, price) │   Compose   │
 │  Contract   │ ◄────────────────── │    Task     │
 └─────────────┘                     └──────┬──────┘
                                            │
@@ -34,16 +34,18 @@ A [Compose](https://docs.goldsky.com/compose/introduction) example that fetches 
 
 1. **Cron trigger** fires every minute
 2. **CoinGecko API** is called to fetch the current BTC/USD price
-3. **On-chain contract** receives the price as `bytes32` via a managed Compose wallet
+3. **On-chain contract** receives the price via a typed contract class and managed Compose wallet
 4. **Collection** stores the price for historical queries
 
 ## Quick Start
 
-### 1. Generate types
+### 1. Generate types and contract classes
 
 ```bash
 compose codegen
 ```
+
+This scans `src/contracts/PriceOracle.json` and generates a typed `PriceOracle` class in `.compose/generated/`.
 
 ### 2. Run locally
 
@@ -57,7 +59,7 @@ compose run
 compose deploy
 ```
 
-The app will start writing Bitcoin prices on-chain every minute using a Compose-managed wallet.
+> **Note:** Cloud deploy does not yet support contract codegen (tracked in [FOU-726](https://linear.app/goldsky/issue/FOU-726)). Until that's fixed, replace `oracle.write(...)` with `wallet.writeContract(chain, address, "write(bytes32,bytes32)", [...])` for cloud deployments.
 
 ## Project Structure
 
@@ -66,6 +68,8 @@ bitcoin-oracle/
 ├── compose.yaml                    # Compose configuration
 ├── tsconfig.json                   # TypeScript config with Compose type paths
 ├── src/
+│   ├── contracts/
+│   │   └── PriceOracle.json        # Contract ABI → generates typed class
 │   ├── lib/
 │   │   └── utils.ts                # toBytes32 helper
 │   └── tasks/
@@ -76,9 +80,10 @@ bitcoin-oracle/
 ## Compose Features Demonstrated
 
 - **Cron triggers** — scheduled task execution on a fixed interval
+- **Contract codegen** — typed contract classes generated from ABI JSON files in `src/contracts/`
 - **`context.fetch`** — HTTP requests with built-in retry and backoff
 - **`evm.wallet`** — managed wallet for signing on-chain transactions
-- **`wallet.writeContract`** — smart contract writes with confirmation tracking and reorg handling
+- **`evm.contracts`** — type-safe contract interaction (`oracle.write(...)` instead of raw function signatures)
 - **`collection`** — persistent document storage with automatic indexing
 
 ## Customization
@@ -94,17 +99,19 @@ const response = await fetch<{ price: number }>(
 );
 ```
 
-### Change the target chain
+### Use your own contract
 
-Update `evm.chains.polygonAmoy` to any supported chain:
+1. Drop your contract's ABI JSON into `src/contracts/MyContract.json`
+2. Run `compose codegen` to generate the typed class
+3. Use it in your task:
 
 ```typescript
-const onchainResponse = await wallet.writeContract(
-  evm.chains.ethereum,       // or baseSepolia, arbitrum, etc.
+const myContract = new evm.contracts.MyContract(
   "0xYOUR_CONTRACT_ADDRESS",
-  "write(bytes32,bytes32)",
-  [timestampAsBytes32, priceAsBytes32],
+  evm.chains.ethereum,  // or baseSepolia, arbitrum, polygonAmoy, etc.
+  wallet
 );
+await myContract.yourMethod(arg1, arg2);
 ```
 
 ### Change the cron schedule
@@ -120,4 +127,5 @@ triggers:
 ## Resources
 
 - [Compose Documentation](https://docs.goldsky.com/compose/introduction)
+- [Contract Codegen Docs](https://docs.goldsky.com/compose/context/evm/contracts)
 - [CoinGecko API](https://www.coingecko.com/en/api)
