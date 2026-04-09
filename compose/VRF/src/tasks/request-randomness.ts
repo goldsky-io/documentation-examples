@@ -1,37 +1,36 @@
 import { TaskContext } from "compose";
-import {
-  MEGAETH_TESTNET_V2,
-  CONTRACT_ADDRESS,
-  WALLET_NAMES,
-  CONTRACT_FUNCTIONS,
-} from "../lib/constants.ts";
+
+const CONTRACT_ADDRESS = "CONTRACT_ADDRESS_HERE" as const;
 
 export async function main(context: TaskContext): Promise<{
   requestId: string;
   txHash: string;
 }> {
-  const wallet = await context.evm.wallet({
-    name: WALLET_NAMES.REQUESTER,
-    sponsorGas: false,
+  const { evm } = context;
+
+  const wallet = await evm.wallet({
+    name: "randomness-requester",
   });
 
-  // Send the request
+  // Send the request transaction
   const result = await wallet.writeContract(
-    MEGAETH_TESTNET_V2,
+    evm.chains.baseSepolia,
     CONTRACT_ADDRESS,
-    CONTRACT_FUNCTIONS.REQUEST_RANDOMNESS,
+    "requestRandomness()",
     []
   );
 
-  // Read nextRequestId after tx - subtract 1 to get our requestId.
-  // This is only used for fetching the randomness in the frontend UI.
-  const response = await wallet.readContract(
-    MEGAETH_TESTNET_V2,
+  // Read nextRequestId after tx - subtract 1 to get our requestId
+  const response = await wallet.readContract<string>(
+    evm.chains.baseSepolia,
     CONTRACT_ADDRESS,
-    CONTRACT_FUNCTIONS.NEXT_REQUEST_ID,
+    "nextRequestId() returns (uint256)",
     []
   );
-  const requestId = String(BigInt(JSON.parse(response)) - 1n);
+  const requestId = String(BigInt(response) - 1n);
 
-  return { requestId, txHash: result.hash };
+  return {
+    requestId,
+    txHash: result.hash,
+  };
 }

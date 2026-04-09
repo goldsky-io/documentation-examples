@@ -1,22 +1,19 @@
 import { TaskContext } from "compose";
-import { WALLET_NAMES } from "../lib/constants.ts";
 
 /**
- * Generate Compose wallets and output their addresses
+ * Generate the Compose wallet and output its address
  *
- * Run this before deploying your contract to get the wallet addresses:
+ * Run this before deploying your contract to get the fulfiller address:
  *   goldsky compose callTask generate_wallet '{}'
  */
 export async function main(context: TaskContext) {
-  const [requester, fulfiller] = await Promise.all([
-    context.evm.wallet({ name: WALLET_NAMES.REQUESTER }),
-    context.evm.wallet({ name: WALLET_NAMES.FULFILLER }),
-  ]);
+  const { evm } = context;
+
+  const wallet = await evm.wallet({ name: "randomness-fulfiller" });
 
   return {
-    requester: { address: requester.address, name: requester.name },
-    fulfiller: { address: fulfiller.address, name: fulfiller.name },
-    message:
-      "Use the fulfiller address when deploying your contract, and fund the requester to make randomness requests",
+    address: wallet.address,
+    name: wallet.name,
+    message: "Use this address as the fulfiller when deploying your contract",
   };
 }

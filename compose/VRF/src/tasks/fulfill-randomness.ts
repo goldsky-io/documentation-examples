@@ -1,10 +1,5 @@
 import { TaskContext, OnchainEvent } from "compose";
-import {
-  MEGAETH_TESTNET_V2,
-  CONTRACT_ADDRESS,
-  WALLET_NAMES,
-  CONTRACT_FUNCTIONS,
-} from "../lib/constants.ts";
+
 import {
   fetchLatestRandomness,
   toBytes32,
@@ -12,40 +7,59 @@ import {
   DRAND_CHAIN_INFO,
 } from "../lib/drand.ts";
 
+/** The contract to call with the randomness */
+const TARGET_CONTRACT = "CONTRACT_ADDRESS_HERE" as const;
+
+/**
+ * Fulfill randomness requests using drand
+ *
+ * Triggered by on-chain events (configured in compose.yaml)
+ * Fetches verifiable randomness from drand and calls the target contract
+ */
 export async function main(context: TaskContext, event?: OnchainEvent) {
   const { fetch, evm, logEvent } = context;
 
+  // Parse request ID from event topics
   const requestId = event?.topics[1] ? BigInt(event.topics[1]) : 0n;
 
   // Fetch randomness from drand
-  const drand = await fetchLatestRandomness(fetch);
+  const drandResponse = await fetchLatestRandomness(fetch);
 
   await logEvent({
     code: "DRAND_FETCHED",
-    message: `Fetched drand round ${drand.round}`,
+    message: `Fetched drand round ${drandResponse.round}`,
+    data: JSON.stringify({ round: drandResponse.round }),
   });
 
+  // Get wallet for transaction
   const wallet = await evm.wallet({
-    name: WALLET_NAMES.FULFILLER,
-    sponsorGas: false,
+    name: "randomness-fulfiller",
   });
 
-  // Fulfill the randomness request
+  // Prepare the fulfillment arguments
+  const randomnessBytes32 = toBytes32(drandResponse.randomness);
+  const signatureBytes = toBytes(drandResponse.signature);
+
+  // Call the target contract
   const result = await wallet.writeContract(
-    MEGAETH_TESTNET_V2,
-    CONTRACT_ADDRESS,
-    CONTRACT_FUNCTIONS.FULFILL_RANDOMNESS,
+    evm.chains.baseSepolia,
+    TARGET_CONTRACT,
+    "fulfillRandomness(uint256,bytes32,uint64,bytes)",
     [
       requestId.toString(),
-      toBytes32(drand.randomness),
-      drand.round,
-      toBytes(drand.signature),
+      randomnessBytes32,
+      drandResponse.round,
+      signatureBytes,
     ]
   );
 
   await logEvent({
     code: "RANDOMNESS_FULFILLED",
     message: `Fulfilled request ${requestId} in tx ${result.hash}`,
+    data: JSON.stringify({
+      requestId: requestId.toString(),
+      txHash: result.hash,
+    }),
   });
 
   return {
@@ -53,8 +67,8 @@ export async function main(context: TaskContext, event?: OnchainEvent) {
     requestId: requestId.toString(),
     transactionHash: result.hash,
     drand: {
-      round: String(drand.round),
-      randomness: toBytes32(drand.randomness),
+      round: String(drandResponse.round),
+      randomness: randomnessBytes32,
       chainHash: DRAND_CHAIN_INFO.hash,
     },
   };

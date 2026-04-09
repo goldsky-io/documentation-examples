@@ -1,7 +1,5 @@
 name: "compose-vrf"
-
-# ============ Configuration ============
-# Customize these values for your deployment
+api_version: "stable"
 
 tasks:
   # Utility task to get the Compose wallet address
@@ -18,31 +16,16 @@ tasks:
       - type: "http"
         authentication: "auth_token"
 
-  # Main fulfillment task
+  # Main fulfillment task - triggered by on-chain event
   - path: "./src/tasks/fulfill-randomness.ts"
     name: "fulfill_randomness"
     triggers:
       - type: "onchain_event"
-        network: "megaeth_testnet_v2" # MegaETH testnet v2 (chain ID 6343)
-        contract: "0x4dae8809a210415fb985a63f385886a1a513ee77"
+        network: "base_sepolia"
+        contract: "CONTRACT_ADDRESS_HERE"
         events:
-          - "RandomnessRequested(uint256,address)" # Customize to your event
-    # retry_config:
-    #   max_attempts: 3
-    #   initial_interval_ms: 1000
-    #   backoff_factor: 2
-# ============ Customization Guide ============
-#
-# 1. network: The chain to listen on (snake_case format)
-#    Examples: "mega_eth_testnet_v2", "polygon_amoy", "ethereum_sepolia"
-#
-# 2. contract: The address emitting the event you want to trigger on
-#
-# 3. events: Array of event signatures to listen for
-#    Format: "EventName(type1,type2,...)"
-#    Example: "Transfer(address,address,uint256)"
-#
-# 4. In fulfill-randomness.ts, update:
-#    - TARGET_CONTRACT: Where to send the randomness
-#    - FULFILL_FUNCTION: The function signature to call
-#    - MEGAETH_TESTNET_V2: The custom chain definition for the target contract
+          - "RandomnessRequested(uint256,address)"
+    retry_config:
+      max_attempts: 3
+      initial_interval_ms: 1000
+      backoff_factor: 2

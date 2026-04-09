@@ -1,6 +1,6 @@
 # Compose VRF
 
-A [Compose](https://docs.goldsky.com/compose/introduction) template for fulfilling on-chain randomness requests using [drand](https://drand.love) - a distributed randomness beacon.
+A [Compose](https://docs.goldsky.com/compose/introduction) demo app that fulfills on-chain randomness requests using [drand](https://drand.love) — a distributed randomness beacon.
 
 ## How It Works
 
@@ -25,8 +25,8 @@ A [Compose](https://docs.goldsky.com/compose/introduction) template for fulfilli
 └─────────────┘                     └─────────────┘
 ```
 
-1. **Source contract** emits an event (e.g., `RandomnessRequested`)
-2. **Compose task** is triggered by the event
+1. **Source contract** emits a `RandomnessRequested` event
+2. **Compose task** is triggered by the on-chain event
 3. **drand API** is called to fetch verifiable randomness
 4. **Target contract** receives the randomness with full proof data
 
@@ -34,9 +34,7 @@ Source and target can be the same contract or different contracts.
 
 ## Quick Start
 
-### 1. Deploy the Contract with Forge
-
-First, get your Compose wallet address (this will be the authorized fulfiller):
+### 1. Get your Compose wallet address
 
 Terminal 1:
 ```bash
@@ -48,58 +46,57 @@ Terminal 2:
 goldsky compose callTask generate_wallet '{}'
 ```
 
-This outputs your wallet address - save it for the next step.
+Save the wallet address — this will be the authorized fulfiller.
 
-Deploy `RandomnessConsumer.sol` to MegaETH Testnet v2:
+### 2. Deploy the contract
+
+Deploy `RandomnessConsumer.sol` to Base Sepolia:
+
 ```bash
 # Install Foundry if needed: https://book.getfoundry.sh/getting-started/installation
 
-# Deploy (replace with your fulfiller wallet address)
 forge create contracts/RandomnessConsumer.sol:RandomnessConsumer \
-  --rpc-url https://timothy.megaeth.com/rpc \
+  --rpc-url https://sepolia.base.org \
   --private-key $PRIVATE_KEY \
   --constructor-args 0xYOUR_COMPOSE_WALLET_ADDRESS
 ```
 
-Save the deployed contract address from the output.
+Save the deployed contract address.
 
-### 2. Configure `compose.yaml`
+### 3. Update configuration
 
-Update with your deployed contract address:
-```yaml
-contract: "0xYOUR_DEPLOYED_CONTRACT_ADDRESS"
-events:
-  - "RandomnessRequested(uint256,address)"
-```
-
-### 3. Configure `src/tasks/fulfill-randomness.ts`
-
-Update the target contract (same address if source and target are the same):
-```typescript
-const TARGET_CONTRACT = "0xYOUR_DEPLOYED_CONTRACT_ADDRESS";
-```
+Update the contract address in three places:
+- `compose.yaml` — the `contract` field under `onchain_event` trigger
+- `src/tasks/fulfill-randomness.ts` — `TARGET_CONTRACT`
+- `src/tasks/request-randomness.ts` — `CONTRACT_ADDRESS`
 
 ### 4. Run locally
+
 ```bash
 goldsky compose start
 ```
 
 ### 5. Test it
 
-Call `requestRandomness()` on your contract:
+Request randomness via the HTTP task:
+```bash
+goldsky compose callTask request_randomness '{}'
+```
+
+Or call the contract directly:
 ```bash
 cast send 0xYOUR_CONTRACT_ADDRESS "requestRandomness()" \
-  --rpc-url https://timothy.megaeth.com/rpc \
+  --rpc-url https://sepolia.base.org \
   --private-key $PRIVATE_KEY
 ```
 
-Watch the Compose logs - it should pick up the event and fulfill the request.
+Watch the Compose logs — it should pick up the event and fulfill the request.
 
 ### 6. Deploy to Goldsky
-```bash
-compose deploy
-```
 
+```bash
+goldsky compose deploy
+```
 
 ## Project Structure
 
@@ -109,10 +106,14 @@ vrf/
 ├── contracts/
 │   └── RandomnessConsumer.sol      # Example contract
 ├── src/
+│   ├── contracts/
+│   │   └── RandomnessConsumer.json # Contract ABI (for codegen)
 │   ├── lib/
 │   │   └── drand.ts                # drand API utilities
 │   └── tasks/
-│       └── fulfill-randomness.ts   # Main Compose task
+│       ├── fulfill-randomness.ts   # Fulfills randomness on-chain (event trigger)
+│       ├── generate-wallet.ts      # Outputs Compose wallet address (HTTP trigger)
+│       └── request-randomness.ts   # Requests randomness on-chain (HTTP trigger)
 └── README.md
 ```
 
