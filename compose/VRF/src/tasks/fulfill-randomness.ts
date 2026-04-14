@@ -8,7 +8,7 @@ import {
 } from "../lib/drand.ts";
 
 /** The contract to call with the randomness */
-const TARGET_CONTRACT = "CONTRACT_ADDRESS_HERE" as const;
+const TARGET_CONTRACT = "0xE05Ceb3E269029E3bab46E35515e8987060D1027" as const;
 
 /**
  * Fulfill randomness requests using drand

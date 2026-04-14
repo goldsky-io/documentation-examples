@@ -48,9 +48,9 @@ goldsky compose callTask generate_wallet '{}'
 
 Save the wallet address — this will be the authorized fulfiller.
 
-### 2. Deploy the contract
+### 2. Deploy your own contract (optional)
 
-Deploy `RandomnessConsumer.sol` to Base Sepolia:
+A demo contract is already deployed on Base Sepolia at `0xE05Ceb3E269029E3bab46E35515e8987060D1027`. To deploy your own:
 
 ```bash
 # Install Foundry if needed: https://book.getfoundry.sh/getting-started/installation
@@ -58,25 +58,22 @@ Deploy `RandomnessConsumer.sol` to Base Sepolia:
 forge create contracts/RandomnessConsumer.sol:RandomnessConsumer \
   --rpc-url https://sepolia.base.org \
   --private-key $PRIVATE_KEY \
-  --constructor-args 0xYOUR_COMPOSE_WALLET_ADDRESS
+  --constructor-args 0xYOUR_COMPOSE_WALLET_ADDRESS \
+  --broadcast
 ```
 
-Save the deployed contract address.
-
-### 3. Update configuration
-
-Update the contract address in three places:
+Then update the contract address in three places:
 - `compose.yaml` — the `contract` field under `onchain_event` trigger
 - `src/tasks/fulfill-randomness.ts` — `TARGET_CONTRACT`
 - `src/tasks/request-randomness.ts` — `CONTRACT_ADDRESS`
 
-### 4. Run locally
+### 3. Run locally
 
 ```bash
 goldsky compose start
 ```
 
-### 5. Test it
+### 4. Test it
 
 Request randomness via the HTTP task:
 ```bash
@@ -85,14 +82,14 @@ goldsky compose callTask request_randomness '{}'
 
 Or call the contract directly:
 ```bash
-cast send 0xYOUR_CONTRACT_ADDRESS "requestRandomness()" \
+cast send 0xE05Ceb3E269029E3bab46E35515e8987060D1027 "requestRandomness()" \
   --rpc-url https://sepolia.base.org \
   --private-key $PRIVATE_KEY
 ```
 
 Watch the Compose logs — it should pick up the event and fulfill the request.
 
-### 6. Deploy to Goldsky
+### 5. Deploy to Goldsky
 
 ```bash
 goldsky compose deploy

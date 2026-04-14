@@ -1,6 +1,6 @@
 import { TaskContext } from "compose";
 
-const CONTRACT_ADDRESS = "CONTRACT_ADDRESS_HERE" as const;
+const CONTRACT_ADDRESS = "0xE05Ceb3E269029E3bab46E35515e8987060D1027" as const;
 
 export async function main(context: TaskContext): Promise<{
   requestId: string;
