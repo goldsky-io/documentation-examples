@@ -1,6 +1,6 @@
 import { TaskContext } from "compose";
 
-const CONTRACT_ADDRESS = "0xE05Ceb3E269029E3bab46E35515e8987060D1027" as const;
+const CONTRACT_ADDRESS = "0xE05Ceb3E269029E3bab46E35515e8987060D1027";
 
 export async function main(context: TaskContext): Promise<{
   requestId: string;
@@ -12,25 +12,22 @@ export async function main(context: TaskContext): Promise<{
     name: "randomness-requester",
   });
 
-  // Send the request transaction
-  const result = await wallet.writeContract(
-    evm.chains.baseSepolia,
+  // Instantiate typed contract (generated from src/contracts/RandomnessConsumer.json)
+  const contract = new evm.contracts.RandomnessConsumer(
     CONTRACT_ADDRESS,
-    "requestRandomness()",
-    []
+    evm.chains.baseSepolia,
+    wallet
   );
 
+  // Send the request transaction
+  const { hash } = await contract.requestRandomness();
+
   // Read nextRequestId after tx - subtract 1 to get our requestId
-  const response = await wallet.readContract<string>(
-    evm.chains.baseSepolia,
-    CONTRACT_ADDRESS,
-    "nextRequestId() returns (uint256)",
-    []
-  );
-  const requestId = String(BigInt(response) - 1n);
+  const nextId = await contract.nextRequestId();
+  const requestId = String(BigInt(nextId) - 1n);
 
   return {
     requestId,
-    txHash: result.hash,
+    txHash: hash,
   };
 }

@@ -7,8 +7,7 @@ import {
   DRAND_CHAIN_INFO,
 } from "../lib/drand.ts";
 
-/** The contract to call with the randomness */
-const TARGET_CONTRACT = "0xE05Ceb3E269029E3bab46E35515e8987060D1027" as const;
+const CONTRACT_ADDRESS = "0xE05Ceb3E269029E3bab46E35515e8987060D1027";
 
 /**
  * Fulfill randomness requests using drand
@@ -31,41 +30,42 @@ export async function main(context: TaskContext, event?: OnchainEvent) {
     data: JSON.stringify({ round: drandResponse.round }),
   });
 
-  // Get wallet for transaction
+  // Get wallet and instantiate typed contract (generated from src/contracts/RandomnessConsumer.json)
   const wallet = await evm.wallet({
     name: "randomness-fulfiller",
   });
+
+  const contract = new evm.contracts.RandomnessConsumer(
+    CONTRACT_ADDRESS,
+    evm.chains.baseSepolia,
+    wallet
+  );
 
   // Prepare the fulfillment arguments
   const randomnessBytes32 = toBytes32(drandResponse.randomness);
   const signatureBytes = toBytes(drandResponse.signature);
 
-  // Call the target contract
-  const result = await wallet.writeContract(
-    evm.chains.baseSepolia,
-    TARGET_CONTRACT,
-    "fulfillRandomness(uint256,bytes32,uint64,bytes)",
-    [
-      requestId.toString(),
-      randomnessBytes32,
-      drandResponse.round,
-      signatureBytes,
-    ]
+  // Fulfill the randomness request on-chain
+  const { hash } = await contract.fulfillRandomness(
+    requestId.toString(),
+    randomnessBytes32,
+    drandResponse.round,
+    signatureBytes
   );
 
   await logEvent({
     code: "RANDOMNESS_FULFILLED",
-    message: `Fulfilled request ${requestId} in tx ${result.hash}`,
+    message: `Fulfilled request ${requestId} in tx ${hash}`,
     data: JSON.stringify({
       requestId: requestId.toString(),
-      txHash: result.hash,
+      txHash: hash,
     }),
   });
 
   return {
     success: true,
     requestId: requestId.toString(),
-    transactionHash: result.hash,
+    transactionHash: hash,
     drand: {
       round: String(drandResponse.round),
       randomness: randomnessBytes32,
