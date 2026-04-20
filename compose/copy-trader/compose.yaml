@@ -1,0 +1,40 @@
+name: "copy-trader"
+api_version: "stable"
+
+secrets:
+  - PRIVATE_KEY
+
+env:
+  cloud:
+    # ============ Required configuration ============
+    # Comma-separated wallets to copy. Must match the list in
+    # pipeline/polymarket-ctf-events.yaml.
+    WATCHED_WALLETS: "0xWALLET_1,0xWALLET_2"
+
+    # ============ Optional configuration ============
+    # Trade size per webhook. $1 is the Polymarket minimum notional.
+    TRADE_AMOUNT_USD: "1"
+
+    # Polymarket's CLOB API is geo-blocked in the US; the default Fly proxy
+    # forwards requests from an EU IP. Point at your own proxy if you prefer.
+    CLOB_HOST: "https://fly-polymarket-proxy.fly.dev"
+    GAMMA_HOST: "https://gamma-api.polymarket.com"
+
+tasks:
+  - name: "copy_trade"
+    path: "./src/tasks/copy_trade.ts"
+    triggers:
+      - type: "http"
+        authentication: "auth_token"
+
+  - name: "setup_approvals"
+    path: "./src/tasks/setup_approvals.ts"
+    triggers:
+      - type: "http"
+        authentication: "auth_token"
+
+  - name: "redeem"
+    path: "./src/tasks/redeem.ts"
+    triggers:
+      - type: "cron"
+        expression: "0 */5 * * * *"

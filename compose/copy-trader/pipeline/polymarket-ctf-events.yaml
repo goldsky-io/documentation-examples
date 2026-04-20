@@ -1,0 +1,78 @@
+name: polymarket-ctf-events
+resource_size: s
+description: "Index Polymarket CTF Exchange fills for watched wallets → webhook to Compose"
+
+sources:
+  poly_logs:
+    type: dataset
+    dataset_name: matic.raw_logs
+    version: 1.0.0
+    start_at: latest
+    filter: >-
+      address IN (
+        '0x4bfb41d5b3570defd03c39a9a4d8de6bd8b8982e',
+        '0xc5d563a36ae78145c45a50134d48a1215220f80a'
+      )
+
+transforms:
+  decoded_fills:
+    type: sql
+    primary_key: id
+    sql: |
+      SELECT
+        id,
+        block_number,
+        log_index,
+        transaction_hash,
+        to_timestamp(block_timestamp) AS block_timestamp,
+        evm_log_decode(
+          '[{"anonymous":false,"inputs":[{"indexed":true,"name":"orderHash","type":"bytes32"},{"indexed":true,"name":"maker","type":"address"},{"indexed":true,"name":"taker","type":"address"},{"indexed":false,"name":"makerAssetId","type":"uint256"},{"indexed":false,"name":"takerAssetId","type":"uint256"},{"indexed":false,"name":"makerAmountFilled","type":"uint256"},{"indexed":false,"name":"takerAmountFilled","type":"uint256"},{"indexed":false,"name":"fee","type":"uint256"}],"name":"OrderFilled","type":"event"}]',
+          topics,
+          `data`
+        ) AS `decoded`
+      FROM poly_logs
+
+  order_fills:
+    type: sql
+    primary_key: id
+    sql: |
+      SELECT
+        id,
+        block_number,
+        log_index,
+        transaction_hash,
+        block_timestamp,
+        LOWER(`decoded`.event_params[2]) AS maker,
+        LOWER(`decoded`.event_params[3]) AS taker,
+        `decoded`.event_params[4] AS maker_asset_id,
+        `decoded`.event_params[5] AS taker_asset_id,
+        CAST(`decoded`.event_params[6] AS DOUBLE) / 1e6 AS maker_amount,
+        CAST(`decoded`.event_params[7] AS DOUBLE) / 1e6 AS taker_amount,
+        CAST(`decoded`.event_params[8] AS DOUBLE) / 1e6 AS fee
+      FROM decoded_fills
+      WHERE `decoded`.event_signature = 'OrderFilled'
+
+  # Filter to only watched wallets. REPLACE these with your own addresses —
+  # the list must match WATCHED_WALLETS in compose.yaml.
+  watched_fills:
+    type: sql
+    primary_key: id
+    sql: |
+      SELECT * FROM order_fills
+      WHERE maker IN (
+        '0xWALLET_1',
+        '0xWALLET_2'
+      )
+      OR taker IN (
+        '0xWALLET_1',
+        '0xWALLET_2'
+      )
+
+sinks:
+  # If you rename the Compose app, update the path segment below to match.
+  copy_trade_webhook:
+    type: webhook
+    from: watched_fills
+    url: https://api.goldsky.com/api/admin/compose/v1/copy-trader/tasks/copy_trade
+    secret_name: COMPOSE_WEBHOOK_AUTH
+    one_row_per_request: true

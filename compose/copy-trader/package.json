@@ -1,0 +1,11 @@
+{
+  "name": "copy-trader",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Polymarket copy-trading example for Goldsky Compose + Turbo",
+  "dependencies": {
+    "@ethersproject/wallet": "^5.8.0",
+    "@polymarket/clob-client": "^5.1.3",
+    "viem": "^2.43.2"
+  }
+}
