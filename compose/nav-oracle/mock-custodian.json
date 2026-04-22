@@ -1,0 +1,9 @@
+{
+  "accountName": "Example RWA Fund I",
+  "asOf": "2026-04-22T14:00:00Z",
+  "cash": 125000.00,
+  "tbills": 42500000.00,
+  "repo": 8200000.00,
+  "totalNav": 50825000.00,
+  "ripcord": false
+}
