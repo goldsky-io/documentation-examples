@@ -1,0 +1,39 @@
+name: "prediction-market"
+api_version: "stable"
+
+tasks:
+  # Main cron — every 5 minutes: fetch current BTC price, resolve the
+  # previous cycle's market, launch a new one for this cycle.
+  - path: "./src/tasks/orchestrator.ts"
+    name: "orchestrator"
+    triggers:
+      - type: "cron"
+        expression: "10 */5 * * * *"
+    retry_config:
+      max_attempts: 3
+      initial_interval_ms: 500
+      backoff_factor: 1
+
+  # Prepare a new condition on the CTF (called by orchestrator).
+  - path: "./src/tasks/launch-market.ts"
+    name: "launch_market"
+
+  # Report payouts on an expired condition (called by orchestrator).
+  - path: "./src/tasks/resolve-market.ts"
+    name: "resolve_market"
+
+  # Fetch the current BTC/USD spot price (called by orchestrator).
+  - path: "./src/tasks/market-data.ts"
+    name: "market_data"
+    retry_config:
+      max_attempts: 3
+      initial_interval_ms: 500
+      backoff_factor: 1
+
+  # Utility: HTTP endpoint that returns the oracle wallet's address so you
+  # know which address to fund before the first cron tick.
+  - path: "./src/tasks/generate-wallet.ts"
+    name: "generate_wallet"
+    triggers:
+      - type: "http"
+        authentication: "auth_token"
