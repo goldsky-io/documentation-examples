@@ -18,7 +18,7 @@ import type { TaskPayload as ResolvePayload } from "./resolve-market";
  *   3. Launch a fresh market for the current 5-min bucket.
  */
 export async function main(context: TaskContext) {
-  const { collection, callTask, logEvent } = context;
+  const { collection, callTask } = context;
   const nowMs = Date.now();
   const currentMarketStart = floorToMarketStart(nowMs);
 
@@ -81,12 +81,9 @@ export async function main(context: TaskContext) {
     }
   }
 
-  const ok = resolveErrors === 0 && !launchError;
-  await logEvent({
-    code: ok ? "ORCHESTRATOR_SUCCESS" : "ORCHESTRATOR_FAILURE",
-    message: `resolved=${resolved}/${overdue.length} launched=${launched} resolveErrors=${resolveErrors} launchError=${launchError}`,
-    data: JSON.stringify({ priceUsd, nowMs, currentMarketStart }),
-  });
+  console.log(
+    `cycle complete: price=${priceUsd} resolved=${resolved}/${overdue.length} launched=${launched} resolveErrors=${resolveErrors} launchError=${launchError}`,
+  );
 
   return {
     priceUsd,

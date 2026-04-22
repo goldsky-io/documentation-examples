@@ -23,7 +23,7 @@ export async function main(
   context: TaskContext,
   { startTime, openPrice }: TaskPayload,
 ): Promise<Market> {
-  const { evm, collection, logEvent } = context;
+  const { evm, collection } = context;
   const oracle = await getOracleWallet(context);
   const markets = await collection<Market>("markets");
 
@@ -59,11 +59,7 @@ export async function main(
       e instanceof Error &&
       e.message.includes("condition already prepared")
     ) {
-      await logEvent({
-        code: "CONDITION_ALREADY_PREPARED",
-        message: "Already on-chain; persisting DB record only",
-        data: JSON.stringify({ questionId, startTime }),
-      });
+      console.log(`condition already prepared for ${questionId}; persisting DB record only`);
       const market: Market = {
         questionId,
         assetPair: ASSET_PAIR,

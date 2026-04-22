@@ -18,7 +18,7 @@ export async function main(
   context: TaskContext,
   { market }: TaskPayload,
 ): Promise<Market> {
-  const { evm, collection, logEvent } = context;
+  const { evm, collection } = context;
   const oracle = await getOracleWallet(context);
   const markets = await collection<Market>("markets");
 
@@ -46,11 +46,7 @@ export async function main(
       e instanceof Error &&
       e.message.includes("payout denominator already set")
     ) {
-      await logEvent({
-        code: "PAYOUT_ALREADY_SET",
-        message: "Market already resolved on-chain; persisting DB record only",
-        data: JSON.stringify({ questionId: market.questionId }),
-      });
+      console.log(`market ${market.questionId} already resolved on-chain; persisting DB record only`);
       const resolved: Market = { ...market, resolved: true, outcome };
       await markets.setById(market.questionId, resolved);
       return resolved;

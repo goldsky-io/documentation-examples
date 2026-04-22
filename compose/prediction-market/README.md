@@ -85,7 +85,7 @@ Copy the address from the output, then fund it with Base Sepolia ETH:
 compose logs
 ```
 
-Within 5 minutes the next cron tick fires and the app self-heals. Look for `ORCHESTRATOR_SUCCESS` log entries and `ConditionPreparation` / `ConditionResolution` events on [BaseScan](https://sepolia.basescan.org/address/0xb04639fB29CC8D27e13727c249EbcAb0CDA92331).
+Within 5 minutes the next cron tick fires and the app self-heals. Look for `cycle complete` log lines and `ConditionPreparation` / `ConditionResolution` events on [BaseScan](https://sepolia.basescan.org/address/0xb04639fB29CC8D27e13727c249EbcAb0CDA92331).
 
 ## Project Structure
 
