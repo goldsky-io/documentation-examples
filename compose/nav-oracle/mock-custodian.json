@@ -5,5 +5,5 @@
   "tbills": 42500000.00,
   "repo": 8200000.00,
   "totalNav": 50825000.00,
-  "ripcord": false
+  "ripcord": true
 }
