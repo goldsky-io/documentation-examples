@@ -58,25 +58,23 @@ npm install
 compose deploy -t $COMPOSE_API_KEY
 ```
 
-The first cron tick will fail — the oracle wallet has no gas yet. That's expected. Proceed to step 3.
+Gas sponsorship is on by default, so the oracle wallet doesn't need to be funded — Compose sponsors the `prepareCondition` and `reportPayouts` transactions. The first cron tick fires on the next 5-minute boundary.
 
-### 3. Find and fund the oracle wallet
-
-```bash
-goldsky compose callTask generate_wallet '{}'
-```
-
-Copy the address from the output, then fund it with Base Sepolia ETH:
-
-- [Coinbase Base Sepolia faucet](https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet) — drip is weeks of gas at Base Sepolia prices.
-
-### 4. Watch it run
+### 3. Watch it run
 
 ```bash
 compose logs
 ```
 
-Within 5 minutes the next cron tick fires and the app self-heals. Look for `cycle complete` log lines and `ConditionPreparation` / `ConditionResolution` events on [BaseScan](https://sepolia.basescan.org/address/0xb04639fB29CC8D27e13727c249EbcAb0CDA92331).
+Look for `cycle complete` log lines and `ConditionPreparation` / `ConditionResolution` events on [BaseScan](https://sepolia.basescan.org/address/0xb04639fB29CC8D27e13727c249EbcAb0CDA92331) filtered by your oracle EOA (topic[2]).
+
+### 4. (Optional) Inspect the oracle address
+
+```bash
+compose wallet list
+```
+
+Prints the address of `prediction-market-oracle` — useful for pointing BaseScan at it.
 
 ## Project Structure
 

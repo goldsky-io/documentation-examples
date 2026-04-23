@@ -30,8 +30,9 @@ tasks:
       initial_interval_ms: 500
       backoff_factor: 1
 
-  # Utility: HTTP endpoint that returns the oracle wallet's address so you
-  # know which address to fund before the first cron tick.
+  # Utility: HTTP endpoint that returns the oracle wallet's address. Not
+  # strictly required (gas is sponsored by default) but handy for pointing a
+  # BaseScan filter at the right EOA.
   - path: "./src/tasks/generate-wallet.ts"
     name: "generate_wallet"
     triggers:
