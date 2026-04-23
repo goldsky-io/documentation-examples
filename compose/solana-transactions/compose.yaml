@@ -1,0 +1,11 @@
+name: "my-solana-app"
+api_version: "stable"
+secrets:
+  - SOLANA_RPC_URL
+  - SOLANA_KEYPAIR
+tasks:
+  - path: "./src/tasks/solana-writer.ts"
+    name: "solana_writer"
+    triggers:
+      - type: "http"
+        authentication: "none"

@@ -1,0 +1,9 @@
+{
+  "name": "solana-transactions",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Solana transactions example for Goldsky Compose using Gill",
+  "dependencies": {
+    "gill": "^0.14.0"
+  }
+}
