@@ -22,17 +22,16 @@ export async function main(
   const oracle = await getOracleWallet(context);
   const markets = await collection<Market>("markets");
 
-  const ctf = new evm.contracts.ConditionalTokens(
-    CTF_ADDRESS,
-    evm.chains[CHAIN],
-    oracle,
-  );
-
   const outcome: Outcome = market.closePrice >= market.openPrice ? "UP" : "DOWN";
   const payouts: string[] = outcome === "UP" ? ["1", "0"] : ["0", "1"];
 
   try {
-    const { hash } = await ctf.reportPayouts(market.questionId, payouts);
+    const { hash } = await oracle.writeContract(
+      evm.chains[CHAIN],
+      CTF_ADDRESS,
+      "reportPayouts(bytes32,uint256[])",
+      [market.questionId, payouts],
+    );
     const resolved: Market = {
       ...market,
       resolved: true,

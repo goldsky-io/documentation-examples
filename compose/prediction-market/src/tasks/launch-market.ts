@@ -27,12 +27,6 @@ export async function main(
   const oracle = await getOracleWallet(context);
   const markets = await collection<Market>("markets");
 
-  const ctf = new evm.contracts.ConditionalTokens(
-    CTF_ADDRESS,
-    evm.chains[CHAIN],
-    oracle,
-  );
-
   const questionId = computeQuestionId({
     assetPair: ASSET_PAIR,
     durationSec: DURATION_SEC,
@@ -41,7 +35,12 @@ export async function main(
   const endTime = startTime + DURATION_MS;
 
   try {
-    const { hash } = await ctf.prepareCondition(oracle.address, questionId, "2");
+    const { hash } = await oracle.writeContract(
+      evm.chains[CHAIN],
+      CTF_ADDRESS,
+      "prepareCondition(address,bytes32,uint256)",
+      [oracle.address, questionId, "2"],
+    );
     const market: Market = {
       questionId,
       assetPair: ASSET_PAIR,

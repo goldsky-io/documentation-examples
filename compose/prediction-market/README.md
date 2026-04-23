@@ -40,7 +40,6 @@ One CoinGecko request serves both the closing tick of the expiring market and th
 - **Cron triggers** — `"10 */5 * * * *"` scheduled orchestration.
 - **`context.callTask` fan-out** — orchestrator delegates to three specialized worker tasks with their own retry configs.
 - **Compose-managed wallets** — `context.evm.wallet({ name })` lazily creates a named EOA that signs on-chain transactions.
-- **Typed contracts via codegen** — `src/contracts/ConditionalTokens.json` ABI is compiled into a typed `evm.contracts.ConditionalTokens` class by `compose codegen`.
 - **HTTP host function with retries** — `context.fetch<T>(url, { max_attempts, ... })` for the CoinGecko call.
 - **Collection-backed state** — markets are persisted by questionId with indexes on `endTime` and `resolved`.
 - **Idempotent error handling** — re-running `prepareCondition` or `reportPayouts` after a crash is safe; the tasks catch `"condition already prepared"` / `"payout denominator already set"` and persist the DB state.
@@ -53,23 +52,15 @@ One CoinGecko request serves both the closing tick of the expiring market and th
 npm install
 ```
 
-### 2. Generate the typed contract class
-
-```bash
-compose codegen
-```
-
-This scans `src/contracts/ConditionalTokens.json` and produces a typed wrapper class at `.compose/generated/contracts/ConditionalTokens.ts`.
-
-### 3. Deploy
+### 2. Deploy
 
 ```bash
 compose deploy -t $COMPOSE_API_KEY
 ```
 
-The first cron tick will fail — the oracle wallet has no gas yet. That's expected. Proceed to step 4.
+The first cron tick will fail — the oracle wallet has no gas yet. That's expected. Proceed to step 3.
 
-### 4. Find and fund the oracle wallet
+### 3. Find and fund the oracle wallet
 
 ```bash
 goldsky compose callTask generate_wallet '{}'
@@ -79,7 +70,7 @@ Copy the address from the output, then fund it with Base Sepolia ETH:
 
 - [Coinbase Base Sepolia faucet](https://www.coinbase.com/faucets/base-ethereum-sepolia-faucet) — drip is weeks of gas at Base Sepolia prices.
 
-### 5. Watch it run
+### 4. Watch it run
 
 ```bash
 compose logs
@@ -95,8 +86,6 @@ prediction-market/
 ├── package.json                  # viem dependency
 ├── tsconfig.json                 # Compose path alias
 ├── src/
-│   ├── contracts/
-│   │   └── ConditionalTokens.json  # ABI → typed contract class
 │   ├── lib/
 │   │   ├── constants.ts          # Chain, CTF address, wallet name, salt, URL
 │   │   ├── types.ts              # Market type
