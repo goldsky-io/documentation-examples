@@ -9,8 +9,10 @@ import { toScaled18 } from "../lib/scaling";
  * `mock-custodian.json`, served via GitHub raw. Swap for your own custodian
  * API when you're ready — the response JSON must match CustodianResponse below.
  */
+// TEMP: pointing at the branch until this PR merges to main. Flip back to
+// /main/... before merging.
 const CUSTODIAN_URL =
-  "https://raw.githubusercontent.com/goldsky-io/documentation-examples/main/compose/nav-oracle/mock-custodian.json";
+  "https://raw.githubusercontent.com/goldsky-io/documentation-examples/adam/nav-oracle/compose/nav-oracle/mock-custodian.json";
 
 /**
  * ReserveAggregator addresses on each chain. Leave as the zero address on
@@ -19,8 +21,8 @@ const CUSTODIAN_URL =
  * create nav-oracle-publisher --env cloud` and deployed the contract via
  * `forge create`.
  */
-const BASE_SEPOLIA_AGGREGATOR     = "0x0000000000000000000000000000000000000000";
-const ARBITRUM_SEPOLIA_AGGREGATOR = "0x0000000000000000000000000000000000000000";
+const BASE_SEPOLIA_AGGREGATOR     = "0x8099A30Ac752f86C77A0e0210085a908ba6d02fE";
+const ARBITRUM_SEPOLIA_AGGREGATOR = "0x02D9Df62B7AED15739D638B92BAcEA2ce4Cb3d70";
 
 // ─── Internals ────────────────────────────────────────────────────────────
 
@@ -39,17 +41,27 @@ interface CustodianResponse {
 export async function main(context: TaskContext) {
   const { fetch, evm } = context;
 
-  // First-deploy tolerance: until the operator runs `wallet create`, deploys
-  // the contracts, and fills in the real addresses at the top of this file,
-  // skip cleanly instead of thrashing through retries.
+  // Resolve the managed wallet up front. On the very first run this triggers
+  // auto-creation, so the publisher address is available before the contracts
+  // are deployed (it's the `publisher` constructor arg for ReserveAggregator).
+  // sponsorGas: true lets Goldsky pay gas for every write, so the publisher
+  // never needs to be funded.
+  const wallet = await evm.wallet({
+    name: "nav-oracle-publisher",
+    sponsorGas: true,
+  });
+
+  // First-deploy tolerance: until the operator deploys the contracts and
+  // fills in the real addresses at the top of this file, skip cleanly
+  // instead of thrashing through retries.
   if (
     BASE_SEPOLIA_AGGREGATOR.toLowerCase()     === PLACEHOLDER_ADDRESS ||
     ARBITRUM_SEPOLIA_AGGREGATOR.toLowerCase() === PLACEHOLDER_ADDRESS
   ) {
     console.log(
-      "Contract addresses not yet configured — run `goldsky compose wallet create`, deploy the contracts via forge create, fill in BASE_SEPOLIA_AGGREGATOR and ARBITRUM_SEPOLIA_AGGREGATOR at the top of this file, then redeploy."
+      `Publisher wallet ready at ${wallet.address}. Now fund it on both chains, deploy the contracts via forge create, fill in BASE_SEPOLIA_AGGREGATOR and ARBITRUM_SEPOLIA_AGGREGATOR at the top of this file, then redeploy.`
     );
-    return { success: true, skipped: "unconfigured" };
+    return { success: true, skipped: "unconfigured", publisherAddress: wallet.address };
   }
 
   // Fetch the NAV bundle from the custodian. fetch retries transient failures.
@@ -74,31 +86,20 @@ export async function main(context: TaskContext) {
   }
 
   // Scale human USD → 18-decimal fixed-point, and ISO timestamp → unix seconds.
-  // The generated contract class expects stringified big numbers.
-  const cash     = toScaled18(bundle.cash).toString();
-  const tbills   = toScaled18(bundle.tbills).toString();
-  const repo     = toScaled18(bundle.repo).toString();
-  const totalNav = toScaled18(bundle.totalNav).toString();
-  const asOf     = Math.floor(new Date(bundle.asOf).getTime() / 1000).toString();
+  const cash     = toScaled18(bundle.cash);
+  const tbills   = toScaled18(bundle.tbills);
+  const repo     = toScaled18(bundle.repo);
+  const totalNav = toScaled18(bundle.totalNav);
+  const asOf     = BigInt(Math.floor(new Date(bundle.asOf).getTime() / 1000));
 
-  const wallet = await evm.wallet({ name: "nav-oracle-publisher" });
-
-  const baseAggregator = new evm.contracts.ReserveAggregator(
-    BASE_SEPOLIA_AGGREGATOR,
-    evm.chains.baseSepolia,
-    wallet
-  );
-  const arbAggregator = new evm.contracts.ReserveAggregator(
-    ARBITRUM_SEPOLIA_AGGREGATOR,
-    evm.chains.arbitrumSepolia,
-    wallet
-  );
+  const signature = "updateNav(uint256,uint256,uint256,uint256,uint64)";
+  const args = [cash, tbills, repo, totalNav, asOf];
 
   // Publish to both chains independently. allSettled prevents one chain's
   // failure from blocking the other; the next cron cycle reconciles.
   const results = await Promise.allSettled([
-    baseAggregator.updateNav(cash, tbills, repo, totalNav, asOf),
-    arbAggregator.updateNav(cash, tbills, repo, totalNav, asOf),
+    wallet.writeContract(evm.chains.baseSepolia,      BASE_SEPOLIA_AGGREGATOR,     signature, args),
+    wallet.writeContract(evm.chains.arbitrumSepolia, ARBITRUM_SEPOLIA_AGGREGATOR, signature, args),
   ]);
 
   const [baseResult, arbResult] = results;
