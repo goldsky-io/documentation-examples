@@ -1,0 +1,13 @@
+name: "nav-oracle"
+api_version: "stable"
+
+tasks:
+  - path: "./src/tasks/nav-oracle.ts"
+    name: "nav_oracle"
+    triggers:
+      - type: "cron"
+        expression: "*/5 * * * *" # every 5 minutes
+    retry_config:
+      max_attempts: 2
+      initial_interval_ms: 2000
+      backoff_factor: 2
