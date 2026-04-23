@@ -9,10 +9,8 @@ import { toScaled18 } from "../lib/scaling";
  * `mock-custodian.json`, served via GitHub raw. Swap for your own custodian
  * API when you're ready — the response JSON must match CustodianResponse below.
  */
-// TEMP: pointing at the branch until this PR merges to main. Flip back to
-// /main/... before merging.
 const CUSTODIAN_URL =
-  "https://raw.githubusercontent.com/goldsky-io/documentation-examples/adam/nav-oracle/compose/nav-oracle/mock-custodian.json";
+  "https://raw.githubusercontent.com/goldsky-io/documentation-examples/main/compose/nav-oracle/mock-custodian.json";
 
 /**
  * ReserveAggregator addresses on each chain. Leave as the zero address on
