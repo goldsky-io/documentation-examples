@@ -1,0 +1,9 @@
+{
+  "name": "prediction-market",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Binary prediction market example for Goldsky Compose",
+  "dependencies": {
+    "viem": "^2.43.2"
+  }
+}
