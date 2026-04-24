@@ -1,0 +1,176 @@
+---
+name: setup
+description: Configure and deploy this Compose VRF example under the user's own Goldsky account. Walks a new user through installing the Goldsky CLI, deploying their own RandomnessConsumer contract (or reusing the shared demo), wiring the contract address into code, optionally publishing to a new GitHub repo, and deploying to Goldsky. Use when a user has just cloned this example or asks to set up / deploy / configure the VRF app.
+---
+
+# Setup: Compose VRF
+
+This skill makes the cloned VRF example runnable under the user's own Goldsky account. The app listens for a `RandomnessRequested` event on an EVM contract, fetches verifiable randomness from drand, and writes it back on-chain via `fulfillRandomness`.
+
+Assume the user has never used Goldsky Compose before. Do not skip preflight checks.
+
+## Non-negotiables
+
+- **Never run `forge create`, `goldsky compose deploy`, `git push`, or `gh repo create` without showing the exact command first and getting explicit confirmation.** Output the command, wait.
+- **The authorized fulfiller on the contract must be the Compose-managed wallet.** Getting this wrong is the #1 failure mode. The contract rejects `fulfillRandomness` from any other address.
+- **Three files share the same contract address.** If the user changes it, change all three.
+
+## Preflight
+
+Run these checks in order. Stop and resolve each before moving on.
+
+1. **`goldsky` CLI installed.** Run `goldsky --version`. If missing:
+   - macOS/Linux: `curl https://goldsky.com/install.sh | sh`
+   - Or point the user to https://docs.goldsky.com/reference/cli
+2. **`goldsky` authenticated.** Run `goldsky projects list`. If it errors with auth:
+   - Ask the user to run `goldsky login` themselves (browser flow) — don't run it for them.
+   - Alternatively, accept an API key via `GOLDSKY_API_KEY` env var or `-t <key>` on each deploy command. Ask which they prefer.
+3. **`deno` installed** (Compose runs on Deno locally). Run `deno --version`. If missing: `curl -fsSL https://deno.land/install.sh | sh`.
+4. **`foundry` installed** (only if the user will deploy their own contract). Run `forge --version`. If missing, give them the install command but don't run it: `curl -L https://foundry.paradigm.xyz | bash && foundryup`.
+
+## Step 1 — Configuration interview
+
+Ask the user these questions in order. Don't batch them — let each answer inform the next.
+
+1. **"What do you want to name this app?"** (default: `compose-vrf`) — this becomes the value at `compose.yaml:1` and also the path segment in the deploy URL.
+2. **"Which chain are you targeting?"** (default: `base_sepolia`) — accept any EVM chain Compose supports. Common options: `base_sepolia`, `base`, `ethereum`, `arbitrum`, `optimism`, `polygon`. Use the `evm.chains.<name>` camelCase form in the TS code (e.g. `baseSepolia`) and the `snake_case` form in `compose.yaml` (e.g. `base_sepolia`).
+3. **"Do you already have your own `RandomnessConsumer`-style contract deployed, or do you want to deploy a fresh one from this example?"**
+   - The shared demo contract at `0xE05Ceb3E269029E3bab46E35515e8987060D1027` is **not an option**. Its fulfiller address is fixed at deploy time; they can't whitelist their Compose wallet on it.
+   - "Bring your own" path: the user has a contract they control where they can set the Compose wallet as the authorized fulfiller (via a `setFulfiller`-style method or by redeploying with the right constructor arg). Ask for the address.
+   - "Deploy fresh" path: the user runs `forge create` with `contracts/RandomnessConsumer.sol` in Step 3 below.
+4. **"Do you want to publish this to a new GitHub repo?"** — optional. If yes, ask for repo name and whether it should be public or private.
+
+## Step 2 — Fetch the Compose-managed wallet address
+
+The contract's constructor takes the authorized fulfiller address. That has to be the Compose wallet, not the user's own EOA. So we need the wallet address *before* deploying the contract.
+
+Run:
+
+```bash
+goldsky compose start
+```
+
+Wait for the server to be ready (prints a port). Then in a second shell:
+
+```bash
+goldsky compose callTask generate_wallet '{}'
+```
+
+The response JSON contains `address`. Save it — call it `$COMPOSE_WALLET`. This is a deterministic managed wallet Compose creates on first call.
+
+Stop the local server once you have the address (`Ctrl-C` in the first shell).
+
+## Step 3 — Get the contract address
+
+**Branch A — Bring-your-own contract.** Ask the user to run their contract's fulfiller-authorization method with `$COMPOSE_WALLET` (e.g. `cast send <contract> "setFulfiller(address)" $COMPOSE_WALLET --rpc-url <RPC> --private-key $PRIVATE_KEY`). Confirm the write succeeded on the explorer. Then capture the contract address as `$CONTRACT_ADDRESS` and jump to Step 4.
+
+**Branch B — Deploy fresh from this example.** Output this command for the user, substituting their chain's RPC URL and the wallet address from Step 2. Do **not** execute it — the user must run it with their own funded private key.
+
+```bash
+forge create contracts/RandomnessConsumer.sol:RandomnessConsumer \
+  --rpc-url <RPC_URL_FOR_CHOSEN_CHAIN> \
+  --private-key $PRIVATE_KEY \
+  --constructor-args $COMPOSE_WALLET \
+  --broadcast
+```
+
+RPC URLs for common chains:
+- `base_sepolia` → `https://sepolia.base.org`
+- `base` → `https://mainnet.base.org`
+- `arbitrum_sepolia` → `https://sepolia-rollup.arbitrum.io/rpc`
+- `optimism_sepolia` → `https://sepolia.optimism.io`
+
+Tell the user `$PRIVATE_KEY` must be an EOA with gas on the target chain. After the command succeeds, it prints `Deployed to: 0x...`. Ask the user for that address — call it `$CONTRACT_ADDRESS`.
+
+## Step 4 — Wire the contract address and chain into code
+
+Three files must stay in sync. Make these edits:
+
+**`compose.yaml`** (lines 1, 24–27):
+- Line 1: `name: "<user's app name>"`
+- Line 24: `network: "<chosen chain in snake_case>"`
+- Line 25: `contract: "<CONTRACT_ADDRESS>"`
+
+**`src/tasks/fulfill-randomness.ts`**:
+- Line 10: `const CONTRACT_ADDRESS = "<CONTRACT_ADDRESS>";`
+- Line 36: `evm.chains.<chosen chain in camelCase>`
+
+**`src/tasks/request-randomness.ts`**:
+- Line 3: `const CONTRACT_ADDRESS = "<CONTRACT_ADDRESS>";`
+- Line 18: `evm.chains.<chosen chain in camelCase>`
+
+Show a diff before applying, then apply with Edit.
+
+## Step 5 — Fund the Compose wallet
+
+The Compose wallet signs the on-chain `fulfillRandomness` tx, so it needs native gas on the target chain.
+
+For mainnets: send a small amount of native gas token to `$COMPOSE_WALLET`. ~$1 is plenty to start.
+
+For testnets: use a faucet (e.g. https://www.alchemy.com/faucets/base-sepolia for Base Sepolia). Paste `$COMPOSE_WALLET` into the faucet, wait for confirmation.
+
+## Step 6 — Optional: publish to a new GitHub repo
+
+Only if the user said yes in Step 1.
+
+```bash
+# From the example directory
+git init
+git add .
+git commit -m "Initial commit: Compose VRF"
+gh repo create <user's repo name> --<public|private> --source=. --push
+```
+
+Output commands, wait for confirmation, then run.
+
+## Step 7 — Deploy to Goldsky
+
+```bash
+goldsky compose deploy
+```
+
+If the user chose API-key-based auth in preflight, append `-t $GOLDSKY_API_KEY`.
+
+First deploy may take 1–2 minutes. Watch for `Deployed compose app: <app_name>` in the output. It also prints the HTTP task URLs.
+
+## Step 8 — Smoke test
+
+Run:
+
+```bash
+goldsky compose callTask request_randomness '{}'
+```
+
+Expected: JSON with `requestId` and `txHash`. The `txHash` is the on-chain `requestRandomness()` transaction.
+
+Then wait 10–30 seconds and tail the deployed app's logs:
+
+```bash
+goldsky compose logs
+```
+
+You should see:
+- `fetched drand round <N>`
+- `fulfilled request <requestId> in tx <hash>`
+
+Verify on-chain that the randomness was written:
+
+```bash
+cast call $CONTRACT_ADDRESS "isFulfilled(uint256)" <requestId> --rpc-url <RPC_URL>
+# → 0x...01 (true)
+```
+
+If `isFulfilled` returns false or the logs show a revert, jump to Troubleshooting.
+
+## Troubleshooting
+
+- **`OnlyFulfiller()` revert on `fulfillRandomness`.** The contract's authorized fulfiller is not the Compose wallet. Either (a) redeploy the contract with `$COMPOSE_WALLET` as the constructor arg, or (b) call `setFulfiller($COMPOSE_WALLET)` on the contract from the original deployer EOA.
+- **Task doesn't fire when the event is emitted.** Check `compose.yaml` has the exact contract address (checksummed casing doesn't matter, but character match does) and the correct `network`. Also confirm your deploy succeeded and the trigger is active with `goldsky compose info`.
+- **`insufficient funds for gas`.** `$COMPOSE_WALLET` needs native token on the target chain. Send some.
+- **drand fetch fails.** The default drand endpoint is public. If drand is down, the retry config in `compose.yaml` (max 3, exponential backoff) handles transient failures. If it persistently fails, check https://api.drand.sh/chains.
+
+## What you should NOT do
+
+- Do not modify `src/lib/drand.ts` unless the user explicitly asks to swap drand networks. The hardcoded constants are chain-specific BLS parameters — getting them wrong breaks signature verification silently.
+- Do not change the event signature `RandomnessRequested(uint256,address)` in `compose.yaml` — it must match the contract.
+- Do not add a `PRIVATE_KEY` secret to this app. The Compose wallet is the signer; the user's EOA is only needed to deploy the contract, never at runtime.
