@@ -22,9 +22,9 @@ Run these checks in order. Stop and resolve each before moving on.
 1. **`goldsky` CLI installed.** Run `goldsky --version`. If missing:
    - macOS/Linux: `curl https://goldsky.com/install.sh | sh`
    - Or point the user to https://docs.goldsky.com/reference/cli
-2. **`goldsky` authenticated.** Run `goldsky projects list`. If it errors with auth:
+2. **`goldsky` authenticated.** Run `goldsky project list`. If it errors with auth:
    - Ask the user to run `goldsky login` themselves (browser flow) — don't run it for them.
-   - Alternatively, accept an API key via `GOLDSKY_API_KEY` env var or `-t <key>` on each deploy command. Ask which they prefer.
+   - Alternatively, accept a CLI auth token via `--token <token>` on each command. The user gets this from their Goldsky dashboard.
 3. **`deno` installed** (Compose runs on Deno locally). Run `deno --version`. If missing: `curl -fsSL https://deno.land/install.sh | sh`.
 4. **`foundry` installed** (only if the user will deploy their own contract). Run `forge --version`. If missing, give them the install command but don't run it: `curl -L https://foundry.paradigm.xyz | bash && foundryup`.
 
@@ -44,21 +44,13 @@ Ask the user these questions in order. Don't batch them — let each answer info
 
 The contract's constructor takes the authorized fulfiller address. That has to be the Compose wallet, not the user's own EOA. So we need the wallet address *before* deploying the contract.
 
-Run:
+The fulfiller wallet's name is `randomness-fulfiller` (see `src/tasks/fulfill-randomness.ts:31`). Provision it and print its address:
 
 ```bash
-goldsky compose start
+goldsky compose wallet create randomness-fulfiller
 ```
 
-Wait for the server to be ready (prints a port). Then in a second shell:
-
-```bash
-goldsky compose callTask generate_wallet '{}'
-```
-
-The response JSON contains `address`. Save it — call it `$COMPOSE_WALLET`. This is a deterministic managed wallet Compose creates on first call.
-
-Stop the local server once you have the address (`Ctrl-C` in the first shell).
+Save the printed address — call it `$COMPOSE_WALLET`.
 
 ## Step 3 — Get the contract address
 
@@ -129,21 +121,21 @@ Output commands, wait for confirmation, then run.
 goldsky compose deploy
 ```
 
-If the user chose API-key-based auth in preflight, append `-t $GOLDSKY_API_KEY`.
+If the user chose token-based auth in preflight, append `--token $GOLDSKY_TOKEN` (using whatever variable name they stored the token in).
 
 First deploy may take 1–2 minutes. Watch for `Deployed compose app: <app_name>` in the output. It also prints the HTTP task URLs.
 
 ## Step 8 — Smoke test
 
-Run:
+The simplest way to trigger a randomness request against the deployed app is a direct contract call. That also exercises the full event-trigger path:
 
 ```bash
-goldsky compose callTask request_randomness '{}'
+cast send $CONTRACT_ADDRESS "requestRandomness()" \
+  --rpc-url <RPC_URL> \
+  --private-key $PRIVATE_KEY
 ```
 
-Expected: JSON with `requestId` and `txHash`. The `txHash` is the on-chain `requestRandomness()` transaction.
-
-Then wait 10–30 seconds and tail the deployed app's logs:
+Wait 10–30 seconds for Compose to pick up the event, then tail logs:
 
 ```bash
 goldsky compose logs
@@ -160,12 +152,14 @@ cast call $CONTRACT_ADDRESS "isFulfilled(uint256)" <requestId> --rpc-url <RPC_UR
 # → 0x...01 (true)
 ```
 
+Note: `goldsky compose callTask` only invokes *locally running* tasks (via `goldsky compose start`). For the deployed app, use the cast send above, or curl the `request_randomness` HTTP endpoint with a bearer token from the Goldsky dashboard.
+
 If `isFulfilled` returns false or the logs show a revert, jump to Troubleshooting.
 
 ## Troubleshooting
 
 - **`OnlyFulfiller()` revert on `fulfillRandomness`.** The contract's authorized fulfiller is not the Compose wallet. Either (a) redeploy the contract with `$COMPOSE_WALLET` as the constructor arg, or (b) call `setFulfiller($COMPOSE_WALLET)` on the contract from the original deployer EOA.
-- **Task doesn't fire when the event is emitted.** Check `compose.yaml` has the exact contract address (checksummed casing doesn't matter, but character match does) and the correct `network`. Also confirm your deploy succeeded and the trigger is active with `goldsky compose info`.
+- **Task doesn't fire when the event is emitted.** Check `compose.yaml` has the exact contract address (checksummed casing doesn't matter, but character match does) and the correct `network`. Also confirm your deploy succeeded and the trigger is active with `goldsky compose status`.
 - **`insufficient funds for gas`.** `$COMPOSE_WALLET` needs native token on the target chain. Send some.
 - **drand fetch fails.** The default drand endpoint is public. If drand is down, the retry config in `compose.yaml` (max 3, exponential backoff) handles transient failures. If it persistently fails, check https://api.drand.sh/chains.
 

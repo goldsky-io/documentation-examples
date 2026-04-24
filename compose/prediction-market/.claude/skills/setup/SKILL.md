@@ -20,7 +20,7 @@ This is the lowest-setup-cost example in the repo: no contracts to deploy, no se
 ## Preflight
 
 1. **`goldsky` CLI** — `goldsky --version`.
-2. **`goldsky` authenticated** — `goldsky projects list`.
+2. **`goldsky` authenticated** — `goldsky project list`.
 3. **`deno`** — `deno --version`.
 
 That's it. No Foundry, no npm, no Solana tooling.
@@ -88,10 +88,10 @@ Gas is sponsored by default (`context.evm.wallet({ name: ORACLE_WALLET_NAME })` 
 **Get the oracle wallet address:**
 
 ```bash
-goldsky compose callTask generate_wallet '{}'
+goldsky compose wallet create prediction-market-oracle
 ```
 
-Returns the oracle's address. Save as `$ORACLE`.
+This is the same name as `ORACLE_WALLET_NAME` in `constants.ts:20`. The command prints the address — save as `$ORACLE`. If the wallet already exists (e.g. from the deploy having run one cycle), it just prints the existing address.
 
 **Tail logs and wait for the next cron fire.** Cron is `10 */5 * * * *` — fires at :10, :15, :20, etc. of each hour (with a 10-second offset from the boundary to let CoinGecko settle).
 
@@ -117,7 +117,7 @@ Filter events to the oracle address (`$ORACLE`) — topic[2] of `ConditionPrepar
 
 ## Troubleshooting
 
-- **`cycle complete` never logs.** Check that the deploy succeeded and the cron trigger is active: `goldsky compose info`.
+- **`cycle complete` never logs.** Check that the deploy succeeded and the cron trigger is active: `goldsky compose status`.
 - **`Unexpected CoinGecko response shape`.** The asset field in the response doesn't match. Re-check `src/tasks/market-data.ts:25` and ensure the field matches the asset in `PRICE_URL` (e.g. `ids=ethereum` → `response.ethereum.usd`).
 - **`resolveErrors=1` or higher.** Check `goldsky compose logs` for the underlying error. Two benign cases (the code catches them): "condition already prepared" and "payout denominator already set" — both mean a retry hit a tx that landed but the client didn't know yet. Errors other than those are real problems.
 - **No events on the explorer.** Verify `CTF_ADDRESS` points at the real Gnosis CTF on the chosen chain. An EOA or unrelated contract at the address will produce no events even though the tx succeeds.

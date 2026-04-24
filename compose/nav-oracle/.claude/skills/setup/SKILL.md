@@ -19,7 +19,7 @@ Assume the user has never used Goldsky Compose before. Do not skip preflight.
 ## Preflight
 
 1. **`goldsky` CLI** — run `goldsky --version`. If missing, install per https://docs.goldsky.com/reference/cli.
-2. **`goldsky` authenticated** — run `goldsky projects list`. If it errors, ask the user to run `goldsky login` themselves (browser flow), or accept an API key via `GOLDSKY_API_KEY` / `-t <key>`.
+2. **`goldsky` authenticated** — run `goldsky project list`. If it errors, ask the user to run `goldsky login` themselves (browser flow), or accept a CLI auth token via `--token <token>` on each command.
 3. **`deno`** — run `deno --version`. Install with `curl -fsSL https://deno.land/install.sh | sh` if missing.
 4. **`foundry`** — run `forge --version`. Contract deployment needs it. Install: `curl -L https://foundry.paradigm.xyz | bash && foundryup`.
 
@@ -32,31 +32,17 @@ Assume the user has never used Goldsky Compose before. Do not skip preflight.
 5. **"How often should the cron run?"** (default: `*/5 * * * *`) — custodian-dependent. Hourly (`0 * * * *`) is common for real PoR feeds.
 6. **"Publish to a new GitHub repo?"** — optional.
 
-## Step 2 — Deploy Compose once to provision the publisher wallet
+## Step 2 — Provision the publisher wallet
 
-The publisher wallet is created lazily on first `evm.wallet({ name: "nav-oracle-publisher", sponsorGas: true })` call. Before you can deploy the contracts, you need that address.
-
-Update `compose.yaml:1` to the user's app name, then:
+The publisher wallet is named `nav-oracle-publisher` (`src/tasks/nav-oracle.ts:48`). Provision it and print its address without needing to deploy first:
 
 ```bash
-goldsky compose deploy
+goldsky compose wallet create nav-oracle-publisher
 ```
 
-After it deploys, tail the logs:
+Save the printed address — call it `$PUBLISHER`.
 
-```bash
-goldsky compose logs
-```
-
-Wait up to 5 minutes for the first cron fire. You'll see this log line (the placeholder-address branch is intentionally exercised on first deploy):
-
-```
-Publisher wallet ready at 0x<PUBLISHER_ADDRESS>. Now fund it on both chains, deploy the contracts via forge create, fill in BASE_SEPOLIA_AGGREGATOR and ARBITRUM_SEPOLIA_AGGREGATOR at the top of this file, then redeploy.
-```
-
-Capture `0x<PUBLISHER_ADDRESS>` — call it `$PUBLISHER`.
-
-Note: the log says "fund it on both chains" but **you do not need to fund it if `sponsorGas: true` is set** (which it is, `src/tasks/nav-oracle.ts:49`). Goldsky covers gas. Skip the funding step.
+Note: **you do not need to fund this wallet.** The task uses `sponsorGas: true` (`src/tasks/nav-oracle.ts:49`) so Goldsky covers gas on both chains.
 
 ## Step 3 — Deploy ReserveAggregator on both chains
 

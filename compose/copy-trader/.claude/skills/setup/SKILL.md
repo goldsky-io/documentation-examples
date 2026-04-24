@@ -20,7 +20,7 @@ This is the most complex example. Do not skip any preflight or ordering step.
 ## Preflight
 
 1. **`goldsky` CLI** — `goldsky --version`.
-2. **`goldsky` authenticated** — `goldsky projects list`.
+2. **`goldsky` authenticated** — `goldsky project list`.
 3. **`node` + `npm`** — `npm --version`. Run `npm install` before anything else; Compose bundles `package-lock.json` deps with esbuild.
 4. **`foundry` (optional)** — `cast --version`. Useful for checking USDC.e balance and deriving an address from a private key during setup.
 
@@ -67,18 +67,18 @@ This is a Compose-app-scoped secret referenced at `compose.yaml:5`. The `0x` pre
 
 The pipeline needs a bearer token to POST into the Compose app. This is a **project-level** secret (not per-app), so it only needs to be created once per Goldsky project — if the user has already created it for another pipeline, skip this step.
 
-Get a Compose API token first:
+First, the user needs a Compose API token. There's no CLI command for this — direct them to the Goldsky dashboard (https://app.goldsky.com) to create one. Have them export it to a shell variable so it doesn't end up in their shell history directly:
 
 ```bash
-goldsky compose token create
-# → prints a token; capture it as $COMPOSE_TOKEN
+read -s COMPOSE_TOKEN && export COMPOSE_TOKEN
+# paste the token, press Enter (the -s flag hides input)
 ```
 
-Then:
+Then create the project-scoped webhook auth secret:
 
 ```bash
 goldsky secret create --name COMPOSE_WEBHOOK_AUTH \
-  --value '{"type": "httpauth", "secretKey": "Authorization", "secretValue": "Bearer '$COMPOSE_TOKEN'"}'
+  --value "{\"type\": \"httpauth\", \"secretKey\": \"Authorization\", \"secretValue\": \"Bearer $COMPOSE_TOKEN\"}"
 ```
 
 Referenced at pipeline YAML line 77.
@@ -127,13 +127,15 @@ Divide by `1e6` to get the USDC value.
 
 The `setup_approvals` task grants the two exchanges permission to pull USDC and CTF shares from the EOA. Idempotent — safe to re-run.
 
+The task is deployed with `authentication: "auth_token"` (`compose.yaml:28`, `:34`), so it must be called via HTTP with the token from Step 6. `goldsky compose callTask` only works against local servers, not the deployed app.
+
 ```bash
-goldsky compose callTask setup_approvals
-# → or: curl -X POST -H "Authorization: Bearer $COMPOSE_TOKEN" \
-#     https://api.goldsky.com/api/admin/compose/v1/<app name>/tasks/setup_approvals
+curl -X POST \
+  -H "Authorization: Bearer $COMPOSE_TOKEN" \
+  "https://api.goldsky.com/api/admin/compose/v1/<app name>/tasks/setup_approvals"
 ```
 
-Expect 4 sponsored on-chain transactions (USDC approval × 2 exchanges, CTF `setApprovalForAll` × 2 exchanges). Tail logs to confirm.
+Expect 4 sponsored on-chain transactions (USDC approval × 2 exchanges, CTF `setApprovalForAll` × 2 exchanges). Tail `goldsky compose logs` to confirm.
 
 ## Step 10 — Optional: publish to a new GitHub repo
 

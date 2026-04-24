@@ -19,7 +19,7 @@ Assume the user has never used Goldsky Compose before. Do not skip preflight.
 ## Preflight
 
 1. **`goldsky` CLI** — `goldsky --version`. Install per https://docs.goldsky.com/reference/cli.
-2. **`goldsky` authenticated** — `goldsky projects list`. If it errors, ask the user to run `goldsky login` themselves.
+2. **`goldsky` authenticated** — `goldsky project list`. If it errors, ask the user to run `goldsky login` themselves.
 3. **`deno`** — `deno --version`. `curl -fsSL https://deno.land/install.sh | sh` if missing.
 4. **`foundry`** — `forge --version`. Only needed if the user is deploying a fresh `PriceOracle`.
 
@@ -34,25 +34,15 @@ Assume the user has never used Goldsky Compose before. Do not skip preflight.
    - "Deploy fresh" path: they use the reference Solidity in Step 3.
 5. **"Publish to a new GitHub repo?"** — optional.
 
-## Step 2 — Fetch the Compose-managed wallet address
+## Step 2 — Provision the Compose wallet
 
-Compose creates `bitcoin-oracle-wallet` lazily on first call. Before the contract can authorize it, we need its address.
-
-```bash
-goldsky compose start
-```
-
-In a second shell:
+The wallet is named `bitcoin-oracle-wallet` (`src/tasks/bitcoin-oracle.ts:10`). Provision it and print its address:
 
 ```bash
-deno eval 'console.log(await (await fetch("http://localhost:8787/tasks/bitcoin_oracle", {method: "POST"})).text())'
+goldsky compose wallet create bitcoin-oracle-wallet
 ```
 
-That attempt will fail (no contract yet), but the wallet will be provisioned as a side effect. Read the startup output or local logs for the wallet address, or use the Compose CLI dashboard. If the local run doesn't surface the address, deploy once (Step 6) before deploying the contract and read the deploy logs.
-
-An alternative that's easier for a first-time user: edit `src/tasks/bitcoin-oracle.ts` to temporarily `console.log(wallet.address)` right after line 10, then `goldsky compose start` → one request → capture the address → revert the edit.
-
-Save the address as `$COMPOSE_WALLET`.
+Save the printed address as `$COMPOSE_WALLET`.
 
 ## Step 3 — Contract: bring-your-own OR deploy fresh
 

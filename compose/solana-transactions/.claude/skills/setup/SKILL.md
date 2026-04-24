@@ -11,7 +11,7 @@ Assume the user has never used Goldsky Compose or Solana tooling before.
 
 ## Non-negotiables
 
-- **Never run `goldsky compose deploy`, `goldsky secret create`, `git push`, or `gh repo create` without showing the exact command first and getting explicit confirmation.**
+- **Never run `goldsky compose deploy`, `goldsky compose secret set`, `git push`, or `gh repo create` without showing the exact command first and getting explicit confirmation.**
 - **`SOLANA_KEYPAIR` must be the exact JSON byte-array format produced by `solana-keygen`** (e.g. `[12,34,56,...]`). Base58, hex, mnemonic, or any other representation will crash the task on `JSON.parse` (`src/tasks/solana-writer.ts:67`).
 - **The keypair account must hold SOL on the same network as `SOLANA_RPC_URL`.** Devnet SOL is not mainnet SOL. Missing funds = every tx fails silently at `sendTransaction`.
 - **Program ID, write discriminator, and PDA seeds are three parts of a single contract.** If the user changes the program target, all three must match the new program's IDL.
@@ -19,7 +19,7 @@ Assume the user has never used Goldsky Compose or Solana tooling before.
 ## Preflight
 
 1. **`goldsky` CLI** — `goldsky --version`. Install per https://docs.goldsky.com/reference/cli.
-2. **`goldsky` authenticated** — `goldsky projects list`. If it errors, ask the user to run `goldsky login`.
+2. **`goldsky` authenticated** — `goldsky project list`. If it errors, ask the user to run `goldsky login`.
 3. **`solana` CLI** — `solana --version`. Needed to generate and fund a keypair. Install: `sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"`.
 4. **`node` + `npm`** — `npm --version`. The example has a `package.json` with `gill`; `npm install` must succeed before local `compose run`.
 
@@ -66,17 +66,12 @@ After funding, double-check: `solana balance $SOLANA_ADDRESS --url <network>`.
 
 ## Step 4 — Create Compose secrets
 
-Read the keypair bytes into a variable and create the secrets. Use `xargs -0` to avoid shell-quoting the JSON:
+Both secrets are declared in `compose.yaml:3–5` as app-scoped, so create them with `goldsky compose secret set` (not the project-level `goldsky secret create`):
 
 ```bash
-goldsky secret create --name SOLANA_RPC_URL \
-  --value "https://api.devnet.solana.com"
-
-goldsky secret create --name SOLANA_KEYPAIR \
-  --value "$(cat ./keypair.json)"
+goldsky compose secret set SOLANA_RPC_URL --value "https://api.devnet.solana.com"
+goldsky compose secret set SOLANA_KEYPAIR --value "$(cat ./keypair.json)"
 ```
-
-Both are referenced from `compose.yaml:3–5`.
 
 For local testing, also create a `.env` file (already git-ignored by the example):
 
@@ -116,10 +111,10 @@ goldsky compose deploy
 
 ## Step 8 — Smoke test
 
-The task is HTTP-triggered with `authentication: "none"` — anyone with the URL can call it. The URL format is `https://api.goldsky.com/api/admin/compose/v1/<app name>/tasks/solana_writer`. Invoke:
+The task is HTTP-triggered with `authentication: "none"` (`compose.yaml:11`) — no token required, anyone with the URL can call it. Invoke the deployed endpoint directly:
 
 ```bash
-goldsky compose callTask solana_writer '{}'
+curl -X POST "https://api.goldsky.com/api/admin/compose/v1/<app name>/tasks/solana_writer"
 ```
 
 Good response:
@@ -135,6 +130,8 @@ Good response:
 ```
 
 Verify the transaction on-chain: open `https://explorer.solana.com/tx/<signature>?cluster=devnet` (swap `cluster` for mainnet-beta as appropriate).
+
+Note: `goldsky compose callTask` only invokes *locally running* tasks (via `goldsky compose start` with `.env` populated). Use it for local development; use curl for the deployed app.
 
 If the task returns without a signature or throws, jump to Troubleshooting.
 
