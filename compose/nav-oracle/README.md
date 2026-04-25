@@ -32,9 +32,9 @@ The deployed contract is [`AggregatorV3Interface`](https://docs.chain.link/data-
 - **Multi-chain publish** — one task writes to two chains in a single run, using `Promise.allSettled` so one chain's failure doesn't block the other
 - **Operator ripcord** — a kill-switch baked into the data source that lets an operator halt publishing without touching the task
 - **Structured on-chain state** — `(cash, tbills, repo, totalNav, asOf)` instead of a bare scalar
-- **`AggregatorV3Interface` compatibility** — drop-in for any existing Chainlink consumer
+- **`AggregatorV3Interface` compatibility** — drop-in for any existing Chainlink consumer (note: `updatedAt` reflects the on-chain write time; `startedAt` reflects the custodian's `asOf` valuation timestamp)
 - **Gas-sponsored wallet** — the publisher wallet never needs to hold ETH; `sponsorGas: true` is set on `evm.wallet()`
-- **Cron triggers, managed wallet, typed contract classes** — shared with the other compose examples
+- **Cron triggers, managed wallet, raw `wallet.writeContract`** — shared with the other compose examples. Uses a string ABI signature directly rather than `evm.contracts.X` codegen, since this app ships a hand-written ABI for one function.
 
 ## Quick Start
 
@@ -55,6 +55,8 @@ Save that address — it's the wallet that will sign `updateNav` calls, and it's
 ### 2. Deploy `ReserveAggregator` to both chains
 
 Install [Foundry](https://book.getfoundry.sh/getting-started/installation) if you haven't already.
+
+> **Use a throwaway deployer key.** `--private-key` puts the key in shell history and process listings. Use a fresh key with just enough gas to deploy — the contract has no further use for the deployer once it's live, so there's no reason to expose a key that holds anything else. For production deploys, prefer Foundry's `--account` keystore flag instead.
 
 ```bash
 # Base Sepolia
@@ -127,7 +129,14 @@ If your custodian API returns `"ripcord": true`, the task logs `Ripcord engaged 
 
 ### Add or swap chains
 
-`src/tasks/nav-oracle.ts` currently targets `evm.chains.baseSepolia` and `evm.chains.arbitrumSepolia`. Add another `new evm.contracts.ReserveAggregator(...)` in the `Promise.allSettled` block to publish to a third chain.
+`src/tasks/nav-oracle.ts` currently targets `evm.chains.baseSepolia` and `evm.chains.arbitrumSepolia`. To publish to a third chain, add another address constant at the top of the file and another `wallet.writeContract` entry inside the `Promise.allSettled` block:
+
+```ts
+const OPTIMISM_SEPOLIA_AGGREGATOR = "0x...";
+
+// inside Promise.allSettled([...])
+wallet.writeContract(evm.chains.optimismSepolia, OPTIMISM_SEPOLIA_AGGREGATOR, signature, args),
+```
 
 ### Change publish cadence
 
@@ -152,8 +161,11 @@ nav-oracle/
 ## Notes
 
 - `ReserveAggregator.getRoundData(_roundId)` only returns data for the latest round — this demo contract does not store history. For a production feed you'd add a round-indexed mapping.
-- The contract is single-operator by design: the publisher address is fixed in the constructor and only it can call `updateNav`. Rotate with `setPublisher(newAddress)`.
-- There's no automated test suite for the Solidity. The contract is ~120 lines and intentionally unaudited — do not use it in production without a proper review.
+- The contract is single-operator by design: the publisher address is fixed in the constructor and only it can call `updateNav`. Rotate with `setPublisher(newAddress)` — both the constructor and `setPublisher` reject `address(0)` to prevent accidental bricking.
+- The on-chain `updatedAt` returned from `latestRoundData()` is the block timestamp of the most recent write, matching Chainlink staleness conventions. `startedAt` returns the custodian's `asOf` valuation time. If your consumer treats these the same, point at `updatedAt`.
+- The pre-deployed demo addresses linked above run the original (PR #17) version of the contract; the zero-address guards and `updatedAt = block.timestamp` change shipped here apply to fresh deploys you make from this source.
+- The Solidity has no automated test suite. The contract is ~130 lines and intentionally unaudited — do not use it in production without a proper review.
+- `src/lib/scaling.ts` has a small Node test suite. Run with `npx tsx --test src/lib/scaling.test.ts` from this directory.
 
 ## Resources
 

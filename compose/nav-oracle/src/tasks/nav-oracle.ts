@@ -8,6 +8,10 @@ import { toScaled18 } from "../lib/scaling";
  * Mock custodian endpoint. The default points at this repo's static
  * `mock-custodian.json`, served via GitHub raw. Swap for your own custodian
  * API when you're ready — the response JSON must match CustodianResponse below.
+ *
+ * Production: prefer an HTTPS endpoint you control. The fetched bundle is
+ * written verbatim to on-chain state, so a MITM-vulnerable transport is a
+ * data-integrity risk.
  */
 const CUSTODIAN_URL =
   "https://raw.githubusercontent.com/goldsky-io/documentation-examples/main/compose/nav-oracle/mock-custodian.json";
@@ -19,8 +23,8 @@ const CUSTODIAN_URL =
  * create nav-oracle-publisher --env cloud` and deployed the contract via
  * `forge create`.
  */
-const BASE_SEPOLIA_AGGREGATOR     = "0x8099A30Ac752f86C77A0e0210085a908ba6d02fE";
-const ARBITRUM_SEPOLIA_AGGREGATOR = "0x02D9Df62B7AED15739D638B92BAcEA2ce4Cb3d70";
+const BASE_SEPOLIA_AGGREGATOR     = "0x0000000000000000000000000000000000000000";
+const ARBITRUM_SEPOLIA_AGGREGATOR = "0x0000000000000000000000000000000000000000";
 
 // ─── Internals ────────────────────────────────────────────────────────────
 
@@ -34,6 +38,37 @@ interface CustodianResponse {
   repo: number;      // USD
   totalNav: number;  // USD
   ripcord: boolean;  // operator kill-switch
+}
+
+/**
+ * `fetch<T>` is a TypeScript cast — there is no runtime schema validation.
+ * A real custodian API can return anything the network lets through. Validate
+ * before scaling so misshapen payloads surface as field-level errors instead
+ * of cryptic `non-finite value undefined` or `BigInt(NaN)` throws downstream.
+ */
+function validateBundle(bundle: unknown): asserts bundle is CustodianResponse {
+  if (typeof bundle !== "object" || bundle === null) {
+    throw new Error("Custodian response is not an object");
+  }
+  const b = bundle as Record<string, unknown>;
+  for (const field of ["cash", "tbills", "repo", "totalNav"] as const) {
+    if (typeof b[field] !== "number" || !Number.isFinite(b[field] as number)) {
+      throw new Error(`Custodian response field '${field}' is not a finite number (got ${JSON.stringify(b[field])})`);
+    }
+  }
+  if (typeof b.ripcord !== "boolean") {
+    throw new Error(`Custodian response field 'ripcord' is not a boolean (got ${JSON.stringify(b.ripcord)})`);
+  }
+  if (typeof b.asOf !== "string") {
+    throw new Error(`Custodian response field 'asOf' is not a string (got ${JSON.stringify(b.asOf)})`);
+  }
+  const ts = new Date(b.asOf).getTime();
+  if (!Number.isFinite(ts)) {
+    throw new Error(`Custodian response field 'asOf' is not a parseable ISO 8601 date (got '${b.asOf}')`);
+  }
+  if (typeof b.accountName !== "string") {
+    throw new Error(`Custodian response field 'accountName' is not a string`);
+  }
 }
 
 export async function main(context: TaskContext) {
@@ -72,6 +107,7 @@ export async function main(context: TaskContext) {
   if (!bundle) {
     throw new Error("Custodian fetch returned empty response");
   }
+  validateBundle(bundle);
 
   // Ripcord: the operator has flagged a problem upstream. Do not publish —
   // the next cron run will re-check. This is not an error; returning cleanly
@@ -84,6 +120,7 @@ export async function main(context: TaskContext) {
   }
 
   // Scale human USD → 18-decimal fixed-point, and ISO timestamp → unix seconds.
+  // validateBundle has already proven asOf parses, so the BigInt conversion is safe.
   const cash     = toScaled18(bundle.cash);
   const tbills   = toScaled18(bundle.tbills);
   const repo     = toScaled18(bundle.repo);
@@ -94,7 +131,10 @@ export async function main(context: TaskContext) {
   const args = [cash, tbills, repo, totalNav, asOf];
 
   // Publish to both chains independently. allSettled prevents one chain's
-  // failure from blocking the other; the next cron cycle reconciles.
+  // failure from blocking the other. Note: a partial failure leaves the
+  // failed chain one roundId behind; the next cycle will not back-fill the
+  // missed round, it just publishes the new one. Multi-chain consumers that
+  // compare roundId across chains for liveness will see the divergence.
   const results = await Promise.allSettled([
     wallet.writeContract(evm.chains.baseSepolia,      BASE_SEPOLIA_AGGREGATOR,     signature, args),
     wallet.writeContract(evm.chains.arbitrumSepolia, ARBITRUM_SEPOLIA_AGGREGATOR, signature, args),
@@ -102,10 +142,13 @@ export async function main(context: TaskContext) {
 
   const [baseResult, arbResult] = results;
 
-  const summarize = (r: PromiseSettledResult<{ hash: string }>) =>
-    r.status === "fulfilled"
-      ? { ok: true,  hash: r.value.hash }
-      : { ok: false, error: (r.reason as Error)?.message ?? String(r.reason) };
+  const summarize = (r: PromiseSettledResult<{ hash: string }>) => {
+    if (r.status === "fulfilled") {
+      return { ok: true, hash: r.value.hash } as const;
+    }
+    const error = r.reason instanceof Error ? r.reason.message : String(r.reason);
+    return { ok: false, error } as const;
+  };
 
   const baseOut = summarize(baseResult);
   const arbOut  = summarize(arbResult);
@@ -116,7 +159,6 @@ export async function main(context: TaskContext) {
   );
 
   // If both chains failed, surface as a task error so compose retries.
-  // Partial failures are tolerated; next cron cycle will catch up.
   if (!baseOut.ok && !arbOut.ok) {
     throw new Error(
       `Both chain writes failed. base: ${baseOut.error}; arb: ${arbOut.error}`

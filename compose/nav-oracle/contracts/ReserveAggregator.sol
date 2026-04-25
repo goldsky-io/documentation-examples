@@ -20,7 +20,8 @@ contract ReserveAggregator {
         uint256 tbills;
         uint256 repo;
         uint256 totalNav;
-        uint64  asOf;
+        uint64  asOf;       // custodian-side valuation timestamp
+        uint64  updatedAt;  // block.timestamp at on-chain write
         uint80  roundId;
     }
 
@@ -55,12 +56,15 @@ contract ReserveAggregator {
     error OnlyPublisher();
     error NoDataYet();
     error NoHistoricalData(uint80 requestedRound, uint80 latestRound);
+    error ZeroAddress();
+    error NavOverflowsInt256(uint256 totalNav);
 
     // ============ Constructor ============
 
     /// @param _publisher The Compose managed wallet authorized to call updateNav.
     /// @param _description A short label for this feed (e.g. "Example RWA Fund I NAV / USD").
     constructor(address _publisher, string memory _description) {
+        if (_publisher == address(0)) revert ZeroAddress();
         publisher = _publisher;
         feedDescription = _description;
     }
@@ -83,16 +87,20 @@ contract ReserveAggregator {
         uint64  asOf
     ) external {
         if (msg.sender != publisher) revert OnlyPublisher();
+        // AggregatorV3Interface returns int256; guard so latestRoundData
+        // can never expose a wrapped negative answer for absurd uint values.
+        if (totalNav > uint256(type(int256).max)) revert NavOverflowsInt256(totalNav);
 
         uint80 nextRound = _latest.roundId + 1;
 
         _latest = NavBundle({
-            cash:     cash,
-            tbills:   tbills,
-            repo:     repo,
-            totalNav: totalNav,
-            asOf:     asOf,
-            roundId:  nextRound
+            cash:      cash,
+            tbills:    tbills,
+            repo:      repo,
+            totalNav:  totalNav,
+            asOf:      asOf,
+            updatedAt: uint64(block.timestamp),
+            roundId:   nextRound
         });
 
         emit NavUpdated(nextRound, totalNav, cash, tbills, repo, asOf);
@@ -104,6 +112,10 @@ contract ReserveAggregator {
      */
     function setPublisher(address newPublisher) external {
         if (msg.sender != publisher) revert OnlyPublisher();
+        // Rotating to address(0) would brick the contract (msg.sender can never
+        // equal address(0)), so reject explicitly. There is no recovery path
+        // from a misset publisher otherwise.
+        if (newPublisher == address(0)) revert ZeroAddress();
         emit PublisherRotated(publisher, newPublisher);
         publisher = newPublisher;
     }
@@ -138,8 +150,8 @@ contract ReserveAggregator {
         return (
             _latest.roundId,
             int256(_latest.totalNav),
-            uint256(_latest.asOf),
-            uint256(_latest.asOf),
+            uint256(_latest.asOf),       // startedAt = custodian valuation timestamp
+            uint256(_latest.updatedAt),  // updatedAt = on-chain write block timestamp (matches Chainlink staleness semantics)
             _latest.roundId
         );
     }
@@ -167,7 +179,7 @@ contract ReserveAggregator {
             _latest.roundId,
             int256(_latest.totalNav),
             uint256(_latest.asOf),
-            uint256(_latest.asOf),
+            uint256(_latest.updatedAt),
             _latest.roundId
         );
     }
