@@ -19,8 +19,8 @@ transforms:
              _gs_log_decode(
                '[{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Transfer","type":"event"}]',
                topics,
-               data
-             ) AS decoded
+               `data`
+             ) AS `decoded`
       FROM logs
       WHERE lower(address) = lower('0x2d134178F9efC772A93BB83632965E6b731e1E19')
 
@@ -32,20 +32,20 @@ transforms:
              block_number,
              token,
              'baseSepolia' AS chain,
-             lower(decoded.event_params[2]) AS account,
-             CAST(to_u256(decoded.event_params[3]) AS DECIMAL(38,0)) AS delta
+             lower(`decoded`.event_params[2]) AS account,
+             CAST(to_u256(`decoded`.event_params[3]) AS DECIMAL(38,0)) AS delta
       FROM decoded_transfers
-      WHERE decoded.name = 'Transfer'
+      WHERE `decoded`.event_signature = 'Transfer'
       UNION ALL
       SELECT CONCAT(id, '-debit') AS id,
              block_number,
              token,
              'baseSepolia' AS chain,
-             lower(decoded.event_params[1]) AS account,
-             -CAST(to_u256(decoded.event_params[3]) AS DECIMAL(38,0)) AS delta
+             lower(`decoded`.event_params[1]) AS account,
+             -CAST(to_u256(`decoded`.event_params[3]) AS DECIMAL(38,0)) AS delta
       FROM decoded_transfers
-      WHERE decoded.name = 'Transfer'
-        AND lower(decoded.event_params[1]) != '0x0000000000000000000000000000000000000000'
+      WHERE `decoded`.event_signature = 'Transfer'
+        AND lower(`decoded`.event_params[1]) != '0x0000000000000000000000000000000000000000'
 
 sinks:
   balances:
