@@ -31,7 +31,7 @@ transforms:
              token,
              'arbitrumSepolia' AS chain,
              recipient AS account,
-             CAST(amount AS DECIMAL(38,0)) AS delta
+             CAST(to_u256(amount) AS DECIMAL(38,0)) AS delta
       FROM filtered
       UNION ALL
       SELECT CONCAT(id, '-debit') AS id,
@@ -39,7 +39,7 @@ transforms:
              token,
              'arbitrumSepolia' AS chain,
              sender AS account,
-             -CAST(amount AS DECIMAL(38,0)) AS delta
+             -CAST(to_u256(amount) AS DECIMAL(38,0)) AS delta
       FROM filtered
       WHERE sender != '0x0000000000000000000000000000000000000000'
 
