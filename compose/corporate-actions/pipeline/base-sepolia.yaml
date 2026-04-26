@@ -1,0 +1,61 @@
+name: "corp-actions-balances-base-sepolia"
+resource_size: s
+
+sources:
+  transfers:
+    type: dataset
+    dataset_name: base_sepolia.erc20_transfers
+    version: 1.0.0
+    start_at: earliest
+
+transforms:
+  filtered:
+    type: sql
+    primary_key: id
+    sql: |
+      SELECT id,
+             lower(address)   AS token,
+             lower(recipient) AS recipient,
+             lower(sender)    AS sender,
+             amount
+      FROM transfers
+      WHERE lower(address) = lower('0x0000000000000000000000000000000000000000')
+      -- ^ replace with the deployed Base Sepolia ShareToken address after Phase 1b
+
+  signed_deltas:
+    type: sql
+    primary_key: id
+    sql: |
+      SELECT CONCAT(id, '-credit') AS id,
+             token,
+             'baseSepolia' AS chain,
+             recipient AS account,
+             CAST(amount AS NUMERIC(78,0)) AS delta
+      FROM filtered
+      UNION ALL
+      SELECT CONCAT(id, '-debit') AS id,
+             token,
+             'baseSepolia' AS chain,
+             sender AS account,
+             -CAST(amount AS NUMERIC(78,0)) AS delta
+      FROM filtered
+      WHERE sender != '0x0000000000000000000000000000000000000000'
+
+sinks:
+  balances:
+    type: postgres_aggregate
+    from: signed_deltas
+    schema: public
+    landing_table: share_transfer_log
+    agg_table: share_balances
+    primary_key: id
+    secret_name: CORPORATE_ACTIONS  # auto-created by `goldsky compose deploy`
+    group_by:
+      account: { type: text }
+      token:   { type: text }
+      chain:   { type: text }
+    aggregate:
+      balance:
+        from: delta
+        fn: sum
+        type: numeric(78,0)
