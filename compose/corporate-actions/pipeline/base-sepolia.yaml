@@ -31,7 +31,7 @@ transforms:
              token,
              'baseSepolia' AS chain,
              recipient AS account,
-             CAST(amount AS NUMERIC(76,0)) AS delta
+             CAST(amount AS DECIMAL(38,0)) AS delta
       FROM filtered
       UNION ALL
       SELECT CONCAT(id, '-debit') AS id,
@@ -39,7 +39,7 @@ transforms:
              token,
              'baseSepolia' AS chain,
              sender AS account,
-             -CAST(amount AS NUMERIC(76,0)) AS delta
+             -CAST(amount AS DECIMAL(38,0)) AS delta
       FROM filtered
       WHERE sender != '0x0000000000000000000000000000000000000000'
 
@@ -60,4 +60,4 @@ sinks:
       balance:
         from: delta
         fn: sum
-        type: numeric(76,0)
+        type: numeric(38,0)
