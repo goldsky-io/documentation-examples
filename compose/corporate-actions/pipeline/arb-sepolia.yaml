@@ -19,8 +19,7 @@ transforms:
              lower(sender)    AS sender,
              amount
       FROM transfers
-      WHERE lower(address) = lower('0x0000000000000000000000000000000000000000')
-      -- ^ replace with the deployed Arbitrum Sepolia ShareToken address after Phase 1b
+      WHERE lower(address) = lower('0x81051f77ea167b631Dd7F40ac414A9F9344Fb162')
 
   signed_deltas:
     type: sql
