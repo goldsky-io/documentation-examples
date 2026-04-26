@@ -12,10 +12,10 @@ This is the lowest-setup-cost example in the repo: no contracts to deploy, no se
 ## Non-negotiables
 
 - **Never run `goldsky compose deploy`, `git push`, or `gh repo create` without showing the exact command first and getting explicit confirmation.**
-- **`SALT` (`src/lib/constants.ts:32`) is a domain separator mixed into every question ID.** If the user changes it after markets are live, all existing markets become orphaned on-chain (different `conditionId`, unreachable by the orchestrator). Only change `SALT` during initial setup, never afterward.
-- **The oracle wallet is determined at first deploy.** The `conditionId` of every market is deterministically derived from `(oracle, questionId, 2)`. If the oracle wallet changes (e.g. user renames `ORACLE_WALLET_NAME` at `constants.ts:20`), every prior market is orphaned. Pick the name once.
-- **`CTF_ADDRESS` (`constants.ts:13`) is chain-specific.** The Gnosis CTF is deployed at different addresses on different chains. Using the Base Sepolia address on Polygon will silently produce transactions that revert or hit an EOA. Always verify the address for the user's target chain.
-- **`ASSET_PAIR` (`constants.ts:26`) and `PRICE_URL` (`constants.ts:38–39`) are coupled.** If the user wants ETH/USD instead of BTC/USD, they must update both constants *and* the response parser at `src/tasks/market-data.ts:25` (which currently reads `response.bitcoin.usd` — needs to change to `response.ethereum.usd`).
+- **`SALT` in `src/lib/constants.ts` is a domain separator mixed into every question ID.** If the user changes it after markets are live, all existing markets become orphaned on-chain (different `conditionId`, unreachable by the orchestrator). Only change `SALT` during initial setup, never afterward.
+- **The oracle wallet is determined at first deploy.** The `conditionId` of every market is deterministically derived from `(oracle, questionId, 2)`. If the oracle wallet changes (e.g. user renames `ORACLE_WALLET_NAME` in `src/lib/constants.ts`), every prior market is orphaned. Pick the name once.
+- **`CTF_ADDRESS` in `src/lib/constants.ts` is chain-specific.** The Gnosis CTF is deployed at different addresses on different chains. Using the Base Sepolia address on Polygon will silently produce transactions that revert or hit an EOA. Always verify the address for the user's target chain.
+- **`ASSET_PAIR` and `PRICE_URL` (both in `src/lib/constants.ts`) are coupled.** If the user wants ETH/USD instead of BTC/USD, they must update both constants *and* the response parser inside `main()` of `src/tasks/market-data.ts` (currently reads `response.bitcoin.usd` — needs to change to `response.ethereum.usd`, and the corresponding TypeScript type on the `context.fetch<...>(...)` call).
 
 ## Variable handling for agents
 
@@ -31,16 +31,16 @@ That's it. No Foundry, no npm, no Solana tooling.
 
 ## Step 1 — Configuration interview
 
-1. **"App name?"** (default: `prediction-market`) → `compose.yaml:1`.
-2. **"Which chain?"** (default: `baseSepolia`) → `src/lib/constants.ts:6`. The Gnosis CTF is deployed on most major chains; common options include `baseSepolia`, `base`, `polygon`, `ethereum`. The user must give you the CTF contract address for their chosen chain; defaults are only known for Base Sepolia.
+1. **"App name?"** (default: `prediction-market`) → top-level `name:` field in `compose.yaml`.
+2. **"Which chain?"** (default: `baseSepolia`) → the `CHAIN` const in `src/lib/constants.ts`. The Gnosis CTF is deployed on most major chains; common options include `baseSepolia`, `base`, `polygon`, `ethereum`. The user must give you the CTF contract address for their chosen chain; defaults are only known for Base Sepolia.
 3. **"Which asset pair?"** (default: `BTC_USD`) — any asset CoinGecko supports. If the user picks something else (e.g. `ETH_USD`, `SOL_USD`), you'll update three places in Step 3.
-4. **"Market duration?"** (default: 5 minutes, `DURATION_SEC = 300`) — longer durations produce fewer, larger markets. The cron cadence at `compose.yaml:11` and `DURATION_SEC` should usually match; if the user wants hourly markets, change both.
+4. **"Market duration?"** (default: 5 minutes, `DURATION_SEC = 300`) — longer durations produce fewer, larger markets. The cron cadence (the `expression:` under the `orchestrator` task in `compose.yaml`) and `DURATION_SEC` should usually match; if the user wants hourly markets, change both.
 5. **"Domain salt?"** (default: `"GOLDSKY_COMPOSE_DEMO"`) — only needs to be changed if they want a fresh namespace (e.g. running multiple instances in the same Goldsky project). Once chosen, do not change.
 6. **"Publish to a new GitHub repo?"** — optional.
 
 ## Step 2 — Determine the CTF contract address for the chosen chain
 
-If the user picked `baseSepolia`, the default at `constants.ts:13` is correct: `0xb04639fB29CC8D27e13727c249EbcAb0CDA92331`.
+If the user picked `baseSepolia`, the default `CTF_ADDRESS` in `src/lib/constants.ts` is correct: `0xb04639fB29CC8D27e13727c249EbcAb0CDA92331`.
 
 Otherwise, the user must provide the Gnosis ConditionalTokens address for their chain. Canonical sources:
 - Gnosis Conditional Tokens docs: https://docs.gnosis.io/conditionaltokens/docs/ethereum/
@@ -51,24 +51,24 @@ Call the address `$CTF`.
 
 ## Step 3 — Edit constants
 
-In `src/lib/constants.ts`:
-- Line 6: `export const CHAIN = "<camelCase chain>" as const;`
-- Line 13: `export const CTF_ADDRESS: Address = "$CTF";`
-- Line 20: `export const ORACLE_WALLET_NAME = "<stable name>";` — only change if the user wants a custom name. Once deployed, do not rename.
-- Line 26: `export const ASSET_PAIR = "<e.g. ETH_USD>" as const;` (only if asset changed)
-- Lines 27–28: `export const DURATION_SEC = <N>;` (only if duration changed; DURATION_MS derives from it)
-- Line 32: `export const SALT = "<unique string>";` (only if user wants a custom namespace)
-- Lines 38–39: `export const PRICE_URL = "<CoinGecko URL for chosen asset>";` (only if asset changed)
+In `src/lib/constants.ts` — use grep anchors, locate each `export const X = ...` and replace the value:
+- `CHAIN` → `"<camelCase chain>" as const`
+- `CTF_ADDRESS` → `"$CTF"` (typed `Address`)
+- `ORACLE_WALLET_NAME` → `"<stable name>"` — only change if the user wants a custom name. Once deployed, do not rename.
+- `ASSET_PAIR` → `"<e.g. ETH_USD>" as const` (only if asset changed)
+- `DURATION_SEC` → `<N>` (only if duration changed; `DURATION_MS` is derived and updates automatically)
+- `SALT` → `"<unique string>"` (only if user wants a custom namespace)
+- `PRICE_URL` → `"<CoinGecko URL for chosen asset>"` (only if asset changed)
 
-If `ASSET_PAIR` changed, also edit `src/tasks/market-data.ts:25` to read the correct field from the CoinGecko response. Example for ETH:
+If `ASSET_PAIR` changed, also edit `src/tasks/market-data.ts` — find the `const priceUsd = response?.bitcoin?.usd;` line inside `main()` and change `bitcoin` to the CoinGecko id matching the new asset. Example for ETH:
 
 ```typescript
 const priceUsd = response?.ethereum?.usd;
 ```
 
-Update the TypeScript type on line 16 to match (`{ ethereum?: { usd?: number } }`).
+Update the TypeScript type on the `context.fetch<...>(...)` call directly above to match (`{ ethereum?: { usd?: number } }`).
 
-If market duration changed, also edit `compose.yaml:11` — the cron cadence should match `DURATION_SEC`. **Compose uses 6-field cron with seconds (`sec min hr day mon dow`), not the standard 5-field format.** For 5-min markets: `"10 */5 * * * *"` (10s offset into each 5-min boundary). For hourly markets: `"0 0 * * * *"` (offset 0s, minute 0, every hour). Do not use 5-field cron expressions here — they will fail to parse.
+If market duration changed, also edit the cron `expression:` under the `orchestrator` task in `compose.yaml` — the cadence should match `DURATION_SEC`. **Compose uses 6-field cron with seconds (`sec min hr day mon dow`), not the standard 5-field format.** For 5-min markets: `"10 */5 * * * *"` (10s offset into each 5-min boundary). For hourly markets: `"0 0 * * * *"` (offset 0s, minute 0, every hour). Do not use 5-field cron expressions here — they will fail to parse.
 
 ## Step 4 — Optional: publish to a new GitHub repo
 
@@ -125,7 +125,7 @@ Filter events to the oracle address (`$ORACLE`) — topic[2] of `ConditionPrepar
 
 - **Edits to `compose.yaml` or source files don't take effect after redeploy.** The local `.compose/` bundle cache is stale. Run `rm -rf .compose/` and redeploy.
 - **`cycle complete` never logs.** Check that the deploy succeeded and the cron trigger is active: `goldsky compose status`.
-- **`Unexpected CoinGecko response shape`.** The asset field in the response doesn't match. Re-check `src/tasks/market-data.ts:25` and ensure the field matches the asset in `PRICE_URL` (e.g. `ids=ethereum` → `response.ethereum.usd`).
+- **`Unexpected CoinGecko response shape`.** The asset field in the response doesn't match. Re-check the `response?.<asset>?.usd` access in `src/tasks/market-data.ts` and ensure the field matches the asset in `PRICE_URL` (e.g. `ids=ethereum` → `response.ethereum.usd`).
 - **`resolveErrors=1` or higher.** Check `goldsky compose logs` for the underlying error. Two benign cases (the code catches them): "condition already prepared" and "payout denominator already set" — both mean a retry hit a tx that landed but the client didn't know yet. Errors other than those are real problems.
 - **No events on the explorer.** Verify `CTF_ADDRESS` points at the real Gnosis CTF on the chosen chain. An EOA or unrelated contract at the address will produce no events even though the tx succeeds.
 
@@ -133,6 +133,6 @@ Filter events to the oracle address (`$ORACLE`) — topic[2] of `ConditionPrepar
 
 - Do not rename `ORACLE_WALLET_NAME` after deploying. Every prior market's `conditionId` is bound to the old wallet.
 - Do not change `SALT` after deploying. Same orphaning problem.
-- Do not change the hardcoded outcome count `"2"` at `src/tasks/launch-market.ts:42` to add more outcomes without also updating the payout logic in `resolve-market.ts` and the `Outcome` type. Out of scope for setup.
+- Do not change the hardcoded outcome count `"2"` in the `prepareCondition(...)` call inside `src/tasks/launch-market.ts` to add more outcomes without also updating the payout logic in `resolve-market.ts` and the `Outcome` type. Out of scope for setup.
 - Do not remove the `catch` block for "condition already prepared" / "payout denominator already set" in `launch-market.ts` or `resolve-market.ts`. These are idempotency guards that keep retries safe.
 - Do not fund the oracle wallet — it's a gas-sponsored managed wallet. Sending ETH or tokens to it is just lost money; the orchestrator doesn't read balances.

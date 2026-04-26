@@ -29,9 +29,9 @@ When this skill says `$FOO`, capture the literal value from the prior command's 
 
 ## Step 1 — Configuration interview
 
-1. **"App name?"** (default: `bitcoin-oracle`) → `compose.yaml:1`.
+1. **"App name?"** (default: `bitcoin-oracle`) → top-level `name:` field in `compose.yaml`.
 2. **"Which chain?"** (default: `polygonAmoy`) — any EVM chain supported by Compose. Common options: `base`, `baseSepolia`, `polygon`, `polygonAmoy`, `arbitrum`, `optimism`, `ethereum`. Use the camelCase form in TS code.
-3. **"How often should the cron run?"** (default: `* * * * *`, every minute) — `compose.yaml:8`.
+3. **"How often should the cron run?"** (default: `* * * * *`, every minute) — the `expression:` under the `cron` trigger in `compose.yaml`.
 4. **"Do you already have a `PriceOracle`-shaped contract on that chain, or should we deploy a fresh one?"**
    - The shared demo at `0x34a264BCD26e114eD6C46a15d0A3Ba1873CaA708` on Polygon Amoy is **not a viable option** for their own setup — it's shared testnet infra.
    - "Bring your own" path: they provide the contract address and will whitelist the Compose wallet as writer (via a `setWriter`-style method or redeploy with the right owner/role).
@@ -40,7 +40,7 @@ When this skill says `$FOO`, capture the literal value from the prior command's 
 
 ## Step 2 — Provision the Compose wallet
 
-The wallet is named `bitcoin-oracle-wallet` (`src/tasks/bitcoin-oracle.ts:10`). Provision it and print its address:
+The wallet is named `bitcoin-oracle-wallet` (matches the `name:` in the `evm.wallet({ name: "bitcoin-oracle-wallet" })` call inside `src/tasks/bitcoin-oracle.ts`). Provision it and print its address:
 
 ```bash
 goldsky compose wallet create bitcoin-oracle-wallet
@@ -108,11 +108,11 @@ Capture `Deployed to: 0x...` — that's `$CONTRACT_ADDRESS`.
 
 ## Step 4 — Wire the contract address and chain into the task
 
-Edit `src/tasks/bitcoin-oracle.ts`:
-- Line 5: `const ORACLE_CONTRACT = "$CONTRACT_ADDRESS";`
-- Line 15: `evm.chains.<chosen chain in camelCase>`
+Edit `src/tasks/bitcoin-oracle.ts` — use grep anchors:
+- Find `const ORACLE_CONTRACT = "0x..."` near the top of the file and replace the address with `$CONTRACT_ADDRESS`.
+- Find the `evm.chains.polygonAmoy` reference inside the `new evm.contracts.PriceOracle(...)` call and swap for `evm.chains.<chosen chain in camelCase>`.
 
-If the user changed the cron cadence, edit `compose.yaml:8`.
+If the user changed the cron cadence, edit the `expression:` under the `cron` trigger in `compose.yaml`.
 
 ## Step 5 — Gas: sponsorship vs funding
 
@@ -160,7 +160,7 @@ Verify on-chain:
 - **Every cron run fails with a revert.** The Compose wallet isn't authorized to call `write()`. In Branch A, re-run the contract owner's `setWriter($COMPOSE_WALLET)`. In Branch B, re-check the constructor arg used in `forge create` matches `$COMPOSE_WALLET`.
 - **`insufficient funds for gas`.** Fund `$COMPOSE_WALLET` with native gas token on the target chain.
 - **CoinGecko 429 / rate-limited.** The default retry config (3 attempts, 1s/2s backoff at `bitcoin-oracle.ts` lines 23–25) handles transient rate-limits. If it's persistent, either reduce cron cadence (e.g. `*/5 * * * *`) or switch to a paid API.
-- **Task runs but no events on-chain.** Confirm the chain in `compose.yaml` and `src/tasks/bitcoin-oracle.ts:15` match the chain where the contract lives. A wallet on the wrong chain signs a tx that never appears on the intended chain.
+- **Task runs but no events on-chain.** Confirm the `evm.chains.*` reference in `src/tasks/bitcoin-oracle.ts` matches the chain where the contract lives. A wallet on the wrong chain signs a tx that never appears on the intended chain.
 
 ## What you should NOT do
 

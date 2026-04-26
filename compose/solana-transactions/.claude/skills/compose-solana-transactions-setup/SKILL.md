@@ -12,10 +12,10 @@ Assume the user has never used Goldsky Compose or Solana tooling before.
 ## Non-negotiables
 
 - **Never run `goldsky compose deploy`, `goldsky compose secret set`, `git push`, or `gh repo create` without showing the exact command first and getting explicit confirmation.**
-- **`SOLANA_KEYPAIR` must be the exact JSON byte-array format produced by `solana-keygen`** (e.g. `[12,34,56,...]`). Base58, hex, mnemonic, or any other representation will crash the task on `JSON.parse` (`src/tasks/solana-writer.ts:67`).
+- **`SOLANA_KEYPAIR` must be the exact JSON byte-array format produced by `solana-keygen`** (e.g. `[12,34,56,...]`). Base58, hex, mnemonic, or any other representation will crash the task on the `JSON.parse(env.SOLANA_KEYPAIR)` call inside `src/tasks/solana-writer.ts`.
 - **The keypair account must hold SOL on the same network as `SOLANA_RPC_URL`.** Devnet SOL is not mainnet SOL. Missing funds = every tx fails silently at `sendTransaction`.
 - **Program ID, write discriminator, and PDA seeds are three parts of a single contract.** If the user changes the program target, all three must match the new program's IDL.
-- **`authentication: "none"` (the example default at `compose.yaml:11`) makes the deployed task publicly callable.** Anyone with the URL can drain the keypair's SOL via repeated invocations. Acceptable for local devnet testing only. Before deploying to mainnet-beta or any non-trivial RPC, change it to `"auth_token"`.
+- **`authentication: "none"` (the example default in `compose.yaml`) makes the deployed task publicly callable.** Anyone with the URL can drain the keypair's SOL via repeated invocations. Acceptable for local devnet testing only. Before deploying to mainnet-beta or any non-trivial RPC, change it to `"auth_token"`.
 
 ## Variable handling for agents
 
@@ -30,8 +30,8 @@ When this skill says `$FOO`, capture the literal value from the prior command's 
 
 ## Step 1 — Configuration interview
 
-1. **"App name?"** (default: `my-solana-app`) → `compose.yaml:1`.
-2. **"Which Solana network?"** (default: devnet) — pick one: devnet (`https://api.devnet.solana.com`), testnet (`https://api.testnet.solana.com`), mainnet-beta (`https://api.mainnet-beta.solana.com`), or a private RPC (Helius, QuickNode, etc.). For a first-time user, strongly recommend devnet. **If the user picks mainnet-beta or a private/paid RPC, also flip `authentication` at `compose.yaml:11` to `"auth_token"` before Step 7's deploy** — see Non-negotiables.
+1. **"App name?"** (default: `my-solana-app`) → top-level `name:` field in `compose.yaml`.
+2. **"Which Solana network?"** (default: devnet) — pick one: devnet (`https://api.devnet.solana.com`), testnet (`https://api.testnet.solana.com`), mainnet-beta (`https://api.mainnet-beta.solana.com`), or a private RPC (Helius, QuickNode, etc.). For a first-time user, strongly recommend devnet. **If the user picks mainnet-beta or a private/paid RPC, also flip the `authentication: "none"` line under the `solana_writer` task in `compose.yaml` to `authentication: "auth_token"` before Step 7's deploy** — see Non-negotiables.
 3. **"Do you have your own Anchor program deployed, or should we target the shared demo program at `4MUYDek4T93NNN9dsRfxRTZc4KznZ1vTTe4vLtoS2AEs` on devnet?"**
    - Demo program is only available on devnet — it won't exist on mainnet or a custom RPC.
    - Own program path: you'll need the program ID, the 8-byte discriminator for the `write` instruction (from the IDL), and matching PDA seeds. Ask for all three.
@@ -71,7 +71,7 @@ After funding, double-check: `solana balance $SOLANA_ADDRESS --url <network>`.
 
 ## Step 4 — Create Compose secrets
 
-Both secrets are declared in `compose.yaml:3–5` as app-scoped, so create them with `goldsky compose secret set` (not the project-level `goldsky secret create`).
+Both secrets are declared in the `secrets:` block of `compose.yaml` as app-scoped, so create them with `goldsky compose secret set` (not the project-level `goldsky secret create`).
 
 **Avoid putting the secret value on the command line** — `--value "<literal>"` writes the keypair into shell history (`~/.zsh_history` / `~/.bash_history`). Read it into a temporary variable in a single shell invocation so the literal never lands in history:
 
@@ -93,13 +93,13 @@ SOLANA_KEYPAIR=[12,34,56,...paste contents of keypair.json...]
 
 ## Step 5 — Own-program path (skip if using demo program)
 
-If the user brought their own program, edit `src/tasks/solana-writer.ts`:
+If the user brought their own program, edit `src/tasks/solana-writer.ts` — use grep anchors:
 
-- Line 16: `const PROGRAM_ID = "<user's program ID in base58>";`
-- Line 21: `const WRITE_DISCRIMINATOR = new Uint8Array([...]);` — 8 bytes from their IDL for the `write` instruction.
-- Line 94: PDA seeds (default: `["data", signer_pubkey, key]`). Match their program's expected seed list.
-- Lines 98–111: instruction data layout (default: 8-byte discriminator + 32-byte key + 32-byte value) — match the IDL.
-- Line 105–109: account list — add/remove accounts if the program expects more than the signer + PDA + SystemProgram.
+- Find `const PROGRAM_ID = "..."` and replace with the user's program ID in base58.
+- Find `const WRITE_DISCRIMINATOR = new Uint8Array([...])` and replace with the 8 bytes from their IDL for the `write` instruction.
+- Inside the `getProgramDerivedAddress({ programAddress: ..., seeds: [...] })` call, replace the seeds list with their program's expected seeds (default: `["data", signer_pubkey, key]`).
+- Find the `instructionData` `Uint8Array` construction and the byte-offset writes (`instructionData.set(...)`) — match the user's IDL data layout (default is 8-byte discriminator + 32-byte key + 32-byte value).
+- Find the `accounts: [...]` array on the `writeInstruction` object and add/remove entries to match what the program expects (default: PDA + signer + SystemProgram).
 
 Ask for the user's IDL if they have it; point them at `anchor idl parse <path>` or their program's `target/idl/<name>.json` if using Anchor.
 
@@ -128,7 +128,7 @@ Capture the deployed task URL printed by `compose deploy` for `solana_writer` �
 
 ## Step 8 — Smoke test
 
-The task is HTTP-triggered with `authentication: "none"` (`compose.yaml:11`) — no token required, anyone with the URL can call it. Invoke the deployed endpoint directly:
+The task is HTTP-triggered with `authentication: "none"` (under the `solana_writer` task in `compose.yaml`) — no token required, anyone with the URL can call it. Invoke the deployed endpoint directly:
 
 ```bash
 curl -X POST "https://api.goldsky.com/api/admin/compose/v1/<app name>/tasks/solana_writer"

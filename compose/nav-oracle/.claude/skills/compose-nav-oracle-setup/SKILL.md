@@ -29,8 +29,8 @@ When this skill says `$FOO`, capture the literal value from the prior command's 
 
 ## Step 1 — Configuration interview
 
-1. **"App name?"** (default: `nav-oracle`) — becomes `compose.yaml:1` and the deploy URL path.
-2. **"Which two chains?"** (default: `baseSepolia` + `arbitrumSepolia`) — this example is hardcoded to publish to two chains. If the user wants a single chain or different chains, note that in Step 3 you'll also need to edit `src/tasks/nav-oracle.ts` lines 22–23 and lines 98–101.
+1. **"App name?"** (default: `nav-oracle`) — becomes the top-level `name:` field in `compose.yaml` and the deploy URL path.
+2. **"Which two chains?"** (default: `baseSepolia` + `arbitrumSepolia`) — this example is hardcoded to publish to two chains. If the user wants a single chain or different chains, note that in Step 3 you'll also need to edit the two `BASE_SEPOLIA_AGGREGATOR`/`ARBITRUM_SEPOLIA_AGGREGATOR` constants and the corresponding `wallet.writeContract(evm.chains.*, ...)` calls in the `Promise.allSettled([...])` block of `src/tasks/nav-oracle.ts`.
 3. **"Custodian endpoint URL?"** — the HTTP endpoint that serves the NAV JSON. Default is the mock at `https://raw.githubusercontent.com/goldsky-io/documentation-examples/main/compose/nav-oracle/mock-custodian.json`. If the user is just demoing, leave it; otherwise ask for their own URL.
 4. **"Feed description string for each chain?"** — human-readable label stored on-chain (e.g. `"Example RWA Fund I NAV / USD"`).
 5. **"How often should the cron run?"** (default: `*/5 * * * *`) — custodian-dependent. Hourly (`0 * * * *`) is common for real PoR feeds.
@@ -38,7 +38,7 @@ When this skill says `$FOO`, capture the literal value from the prior command's 
 
 ## Step 2 — Provision the publisher wallet
 
-The publisher wallet is named `nav-oracle-publisher` (`src/tasks/nav-oracle.ts:48`). Provision it and print its address without needing to deploy first:
+The publisher wallet is named `nav-oracle-publisher` (matches the `name:` in the `evm.wallet({ name: "nav-oracle-publisher", sponsorGas: true })` call inside `src/tasks/nav-oracle.ts`). Provision it and print its address without needing to deploy first:
 
 ```bash
 goldsky compose wallet create nav-oracle-publisher
@@ -46,7 +46,7 @@ goldsky compose wallet create nav-oracle-publisher
 
 Save the printed address — call it `$PUBLISHER`.
 
-Note: **you do not need to fund this wallet.** The task uses `sponsorGas: true` (`src/tasks/nav-oracle.ts:49`) so Goldsky covers gas on both chains.
+Note: **you do not need to fund this wallet.** The task passes `sponsorGas: true` to `evm.wallet({...})` in `src/tasks/nav-oracle.ts`, so Goldsky covers gas on both chains.
 
 ## Step 3 — Deploy ReserveAggregator on both chains
 
@@ -72,19 +72,17 @@ Each prints `Deployed to: 0x...`. Capture both — call them `$BASE_AGG` and `$A
 
 ## Step 4 — Wire aggregator addresses into the task
 
-Edit `src/tasks/nav-oracle.ts`:
-- Line 22: `const BASE_SEPOLIA_AGGREGATOR     = "$BASE_AGG";`
-- Line 23: `const ARBITRUM_SEPOLIA_AGGREGATOR = "$ARB_AGG";`
+Edit `src/tasks/nav-oracle.ts` — use grep anchors, line numbers will drift over time:
+- Find `const BASE_SEPOLIA_AGGREGATOR` and replace its address with `"$BASE_AGG"`
+- Find `const ARBITRUM_SEPOLIA_AGGREGATOR` and replace its address with `"$ARB_AGG"`
 
 If the user picked a custom custodian URL in Step 1:
-- Lines 12–13: replace the `CUSTODIAN_URL` string with theirs.
+- Replace the `CUSTODIAN_URL` string near the top of the file with theirs.
 
 If the user picked different chains in Step 1, also edit:
-- Line 99: `wallet.writeContract(evm.chains.<chain1>, BASE_SEPOLIA_AGGREGATOR, ...)`
-- Line 100: `wallet.writeContract(evm.chains.<chain2>, ARBITRUM_SEPOLIA_AGGREGATOR, ...)`
-- And rename the constants to match if desired.
+- The two `wallet.writeContract(evm.chains.baseSepolia, ...)` and `wallet.writeContract(evm.chains.arbitrumSepolia, ...)` calls inside the `Promise.allSettled([...])` block — swap chains and (optionally) rename the constants to match.
 
-If the user wants a custom cron cadence, edit `compose.yaml:9`.
+If the user wants a custom cron cadence, edit the `expression:` under the `cron` trigger in `compose.yaml`.
 
 ## Step 5 — Optional: publish to a new GitHub repo
 

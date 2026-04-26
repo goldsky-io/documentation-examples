@@ -12,7 +12,7 @@ This is the most complex example. Do not skip any preflight or ordering step.
 ## Non-negotiables
 
 - **Never run `goldsky compose deploy`, `goldsky turbo apply`, `goldsky secret create`, `goldsky compose secret set`, `git push`, or `gh repo create` without showing the exact command first and getting explicit confirmation.**
-- **`WATCHED_WALLETS` must be identical in two places:** `compose.yaml:12` (comma-separated env var) and `pipeline/polymarket-ctf-events.yaml:62–69` (SQL `IN` lists for both `maker` and `taker`). Mismatch = fills get indexed but not mirrored, or vice versa. Triple-check the addresses are lowercased, comma-separated, and identical in casing.
+- **`WATCHED_WALLETS` must be identical in two places:** the `WATCHED_WALLETS:` env var inside `env.cloud:` of `compose.yaml`, AND the `maker IN (...)` / `taker IN (...)` lists inside the `watched_fills` SQL transform of `pipeline/polymarket-ctf-events.yaml`. Mismatch = fills get indexed but not mirrored, or vice versa. Triple-check the addresses are lowercased, comma-separated, and identical in casing.
 - **Order of operations matters:** deploy the Compose app *first*, because the pipeline YAML's webhook URL contains the Compose app name. If you deploy the pipeline before the app exists (or with a stale app name), every webhook will 404.
 - **The `PRIVATE_KEY` secret is a real funded EOA on Polygon mainnet.** This is not a testnet. Treat the key with care; do not print it, commit it, or log it. Polymarket CLOB orders are signed as this EOA — orders execute for real money.
 - **US geo-blocking:** Polymarket's CLOB API blocks US IPs. Compose hosts may be in the US. The default `CLOB_HOST` is a shared Fly.io proxy in the EU. For production, the user should deploy their own proxy (link in README).
@@ -30,9 +30,9 @@ When this skill says `$FOO`, capture the literal value from the prior command's 
 
 ## Step 1 — Configuration interview
 
-1. **"App name?"** (default: `copy-trader`) → `compose.yaml:1`. This also becomes a path segment in the pipeline's webhook URL (pipeline YAML line 76). If you rename it, you'll update both places in Step 4.
+1. **"App name?"** (default: `copy-trader`) → top-level `name:` field in `compose.yaml`. This also becomes a path segment in the pipeline's webhook URL (the `url:` under `sinks.copy_trade_webhook` in `pipeline/polymarket-ctf-events.yaml`). If you rename it, you'll update both places in Step 4.
 2. **"Which wallets do you want to copy?"** — one or more Polygon EOAs. Lowercase, comma-separated. These are the "whales" the bot mirrors.
-3. **"Trade size per fill (USD notional)?"** (default: `"1"`, the Polymarket minimum). → `compose.yaml:16`.
+3. **"Trade size per fill (USD notional)?"** (default: `"1"`, the Polymarket minimum). → `TRADE_AMOUNT_USD` under `env.cloud:` in `compose.yaml`.
 4. **"Do you want to use the shared Fly.io proxy (default) or your own?"** — default is fine for testing. For production, recommend deploying https://github.com/goldsky-io/fly-polymarket-proxy and setting `CLOB_HOST` to that deployment's URL.
 5. **"Do you have a Polygon EOA you want to use, or should we generate a fresh one?"** — this EOA holds USDC.e and signs CLOB orders. If generating fresh, `cast wallet new` produces `(address, private_key)`. Record both.
 6. **"Publish to a new GitHub repo?"** — optional.
@@ -47,15 +47,17 @@ Required for Compose's bundler to resolve imports (`viem`, etc.).
 
 ## Step 3 — Edit `compose.yaml`
 
-- Line 1: `name: "<app name>"`
-- Line 12: `WATCHED_WALLETS: "<comma-separated lowercase addresses>"`
-- Line 16: `TRADE_AMOUNT_USD: "<size>"` (keep as `"1"` for first run)
-- Line 20: `CLOB_HOST` — only change if user has their own proxy.
+Use grep anchors — the keys are unique within the file:
+
+- Top-level `name:` → `"<app name>"`
+- Under `env.cloud:`: `WATCHED_WALLETS:` → `"<comma-separated lowercase addresses>"`
+- Under `env.cloud:`: `TRADE_AMOUNT_USD:` → `"<size>"` (keep as `"1"` for first run)
+- Under `env.cloud:`: `CLOB_HOST:` → only change if user has their own proxy.
 
 ## Step 4 — Edit `pipeline/polymarket-ctf-events.yaml`
 
-- Lines 62–69: Replace `'0xWALLET_1', '0xWALLET_2'` with the same lowercased addresses from `WATCHED_WALLETS`. Both the `maker IN (...)` and `taker IN (...)` blocks must match.
-- Line 76: Update the URL's path segment if the app name is not `copy-trader`: `https://api.goldsky.com/api/admin/compose/v1/<app name>/tasks/copy_trade`.
+- In the `watched_fills` SQL transform, replace the placeholder `'0xWALLET_1', '0xWALLET_2'` lists in **both** the `maker IN (...)` and `taker IN (...)` blocks with the lowercased addresses from `WATCHED_WALLETS`. The two lists must contain the same addresses.
+- Under `sinks.copy_trade_webhook`, update the `url:` path segment if the app name is not `copy-trader`: `https://api.goldsky.com/api/admin/compose/v1/<app name>/tasks/copy_trade`.
 
 ## Step 5 — Create the `PRIVATE_KEY` secret
 
@@ -68,7 +70,7 @@ Set the EOA private key (the one funding USDC.e and signing orders).
 EOA_PK="0x<paste hex>" goldsky compose secret set PRIVATE_KEY --value "$EOA_PK"; unset EOA_PK
 ```
 
-This is a Compose-app-scoped secret referenced at `compose.yaml:5`. The `0x` prefix is tolerated but optional.
+This is a Compose-app-scoped secret declared in the `secrets:` block of `compose.yaml`. The `0x` prefix is tolerated but optional.
 
 ## Step 6 — Create the `COMPOSE_WEBHOOK_AUTH` secret (project-scoped, one-time)
 
@@ -88,7 +90,7 @@ goldsky secret create --name COMPOSE_WEBHOOK_AUTH \
 unset COMPOSE_TOKEN
 ```
 
-Referenced at pipeline YAML line 77.
+Referenced as `secret_name: COMPOSE_WEBHOOK_AUTH` in the `sinks.copy_trade_webhook` block of `pipeline/polymarket-ctf-events.yaml`.
 
 ## Step 7 — Deploy Compose app first, then the pipeline
 
@@ -134,7 +136,7 @@ Divide by `1e6` to get the USDC value.
 
 The `setup_approvals` task grants the two exchanges permission to pull USDC and CTF shares from the EOA. Idempotent — safe to re-run.
 
-The task is deployed with `authentication: "auth_token"` (`compose.yaml:34`), so it must be called via HTTP with the token from Step 6. `goldsky compose callTask` only works against local servers, not the deployed app.
+The task is deployed with `authentication: "auth_token"` (the `setup_approvals` task in `compose.yaml`), so it must be called via HTTP with the token from Step 6. `goldsky compose callTask` only works against local servers, not the deployed app.
 
 ```bash
 curl -X POST \
@@ -199,7 +201,7 @@ goldsky turbo logs polymarket-ctf-events
 ## What you should NOT do
 
 - Do not put the private key anywhere other than the `PRIVATE_KEY` secret. Do not add it to `.env`, do not pass it on the command line except via `goldsky compose secret set`, do not log it.
-- Do not change `CHAIN_ID` in `src/lib/types.ts:9` or the contract addresses at lines 3–6. Polymarket lives on Polygon mainnet only.
-- Do not change the `redeem` cron cadence (`compose.yaml:40`) to be more frequent than every 5 minutes. Polymarket's data API is the source of truth and responses are cached; hammering it hurts more than it helps.
+- Do not change `CHAIN_ID` or the `CONTRACTS` addresses in `src/lib/types.ts`. Polymarket lives on Polygon mainnet only.
+- Do not change the `redeem` cron cadence (the `expression:` under the `redeem` task in `compose.yaml`) to be more frequent than every 5 minutes. Polymarket's data API is the source of truth and responses are cached; hammering it hurts more than it helps.
 - Do not delete the `COMPOSE_WEBHOOK_AUTH` secret to rotate it — other pipelines in the same project may depend on it. Create a new one with a different name and update pipeline YAMLs individually.
 - Do not test with US-only proxies or try to run from a US IP without a proxy. Polymarket's CLOB will 403 and the first real fill will fail silently.

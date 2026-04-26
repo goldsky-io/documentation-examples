@@ -34,7 +34,7 @@ Run these checks in order. Stop and resolve each before moving on.
 
 Ask the user these questions in order. Don't batch them — let each answer inform the next.
 
-1. **"What do you want to name this app?"** (default: `compose-vrf`) — this becomes the value at `compose.yaml:1` and also the path segment in the deploy URL.
+1. **"What do you want to name this app?"** (default: `compose-vrf`) — this becomes the `name:` field at the top of `compose.yaml` and the path segment in the deploy URL.
 2. **"Which chain are you targeting?"** (default: `base_sepolia`) — accept any EVM chain Compose supports. Common options: `base_sepolia`, `base`, `ethereum`, `arbitrum`, `optimism`, `polygon`. Use the `evm.chains.<name>` camelCase form in the TS code (e.g. `baseSepolia`) and the `snake_case` form in `compose.yaml` (e.g. `base_sepolia`).
 3. **"Do you already have your own `RandomnessConsumer`-style contract deployed, or do you want to deploy a fresh one from this example?"**
    - The shared demo contract at `0xE05Ceb3E269029E3bab46E35515e8987060D1027` is **not an option**. Its fulfiller address is fixed at deploy time; they can't whitelist their Compose wallet on it.
@@ -46,7 +46,7 @@ Ask the user these questions in order. Don't batch them — let each answer info
 
 The contract's constructor takes the authorized fulfiller address. That has to be the Compose wallet, not the user's own EOA. So we need the wallet address *before* deploying the contract.
 
-The fulfiller wallet's name is `randomness-fulfiller` (see `src/tasks/fulfill-randomness.ts:31`). Provision it and print its address:
+The fulfiller wallet's name is `randomness-fulfiller` (matches the `name:` field in the `evm.wallet({ name: "randomness-fulfiller" })` call inside `src/tasks/fulfill-randomness.ts`). Provision it and print its address:
 
 ```bash
 goldsky compose wallet create randomness-fulfiller
@@ -78,20 +78,20 @@ Tell the user `$PRIVATE_KEY` must be an EOA with gas on the target chain. After 
 
 ## Step 4 — Wire the contract address and chain into code
 
-Three files must stay in sync. Make these edits:
+Three files must stay in sync. Use grep/anchor strings to locate each spot — line numbers will shift over time. Make these edits:
 
-**`compose.yaml`** (lines 1, 24–27):
-- Line 1: `name: "<user's app name>"`
-- Line 24: `network: "<chosen chain in snake_case>"`
-- Line 25: `contract: "<CONTRACT_ADDRESS>"`
+**`compose.yaml`**:
+- The top-level `name:` field → `name: "<user's app name>"`
+- Inside the `onchain_event` trigger: `network:` → `"<chosen chain in snake_case>"`
+- Same trigger: `contract:` → `"<CONTRACT_ADDRESS>"`
 
 **`src/tasks/fulfill-randomness.ts`**:
-- Line 10: `const CONTRACT_ADDRESS = "<CONTRACT_ADDRESS>";`
-- Line 36: `evm.chains.<chosen chain in camelCase>`
+- The `const CONTRACT_ADDRESS = "0x..."` declaration near the top → use `<CONTRACT_ADDRESS>`
+- The `evm.chains.baseSepolia` reference inside the `new evm.contracts.RandomnessConsumer(...)` call → swap for `evm.chains.<chosen chain in camelCase>`
 
 **`src/tasks/request-randomness.ts`**:
-- Line 3: `const CONTRACT_ADDRESS = "<CONTRACT_ADDRESS>";`
-- Line 18: `evm.chains.<chosen chain in camelCase>`
+- The `const CONTRACT_ADDRESS = "0x..."` declaration near the top → use `<CONTRACT_ADDRESS>`
+- The `evm.chains.baseSepolia` reference inside the `new evm.contracts.RandomnessConsumer(...)` call → swap for `evm.chains.<chosen chain in camelCase>`
 
 Show a diff before applying, then apply with Edit.
 
