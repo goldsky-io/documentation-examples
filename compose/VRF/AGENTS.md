@@ -2,7 +2,7 @@
 
 If a user asks you to set up, configure, or deploy this example, follow the setup skill at:
 
-**`.claude/skills/setup/SKILL.md`**
+**`.claude/skills/compose-vrf-setup/SKILL.md`**
 
 That file is the canonical, up-to-date procedure. It walks the user through CLI install, Compose wallet generation, contract deployment (with the exact `forge create` command), wiring the contract address into the three files that reference it, optional GitHub publishing, and the final `goldsky compose deploy`.
 

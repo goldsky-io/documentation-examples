@@ -1,5 +1,5 @@
 ---
-name: setup
+name: compose-vrf-setup
 description: Configure and deploy this Compose VRF example under the user's own Goldsky account. Walks a new user through installing the Goldsky CLI, deploying their own RandomnessConsumer contract (or reusing the shared demo), wiring the contract address into code, optionally publishing to a new GitHub repo, and deploying to Goldsky. Use when a user has just cloned this example or asks to set up / deploy / configure the VRF app.
 ---
 
@@ -15,6 +15,10 @@ Assume the user has never used Goldsky Compose before. Do not skip preflight che
 - **The authorized fulfiller on the contract must be the Compose-managed wallet.** Getting this wrong is the #1 failure mode. The contract rejects `fulfillRandomness` from any other address.
 - **Three files share the same contract address.** If the user changes it, change all three.
 
+## Variable handling for agents
+
+When this skill says `$FOO`, capture the literal value from the prior command's output and substitute it directly into the next command. Do not rely on shell variables persisting between separate Bash tool invocations — each invocation gets a fresh shell with no env carryover from earlier commands.
+
 ## Preflight
 
 Run these checks in order. Stop and resolve each before moving on.
@@ -22,9 +26,7 @@ Run these checks in order. Stop and resolve each before moving on.
 1. **`goldsky` CLI installed.** Run `goldsky --version`. If missing:
    - macOS/Linux: `curl https://goldsky.com/install.sh | sh`
    - Or point the user to https://docs.goldsky.com/reference/cli
-2. **`goldsky` authenticated.** Run `goldsky project list`. If it errors with auth:
-   - Ask the user to run `goldsky login` themselves (browser flow) — don't run it for them.
-   - Alternatively, accept a CLI auth token via `--token <token>` on each command. The user gets this from their Goldsky dashboard.
+2. **`goldsky` authenticated.** Run `goldsky project list`. If it errors with auth, stop and tell the user: "Please run `goldsky login` in your terminal — it will open a browser. When you see the success message, tell me to continue." Do not spawn `goldsky login` from the agent's Bash tool — it requires an interactive browser flow you can't drive. As an alternative, the user can pass a CLI auth token via `--token <token>` on each command (token created in the Goldsky dashboard).
 3. **`deno` installed** (Compose runs on Deno locally). Run `deno --version`. If missing: `curl -fsSL https://deno.land/install.sh | sh`.
 4. **`foundry` installed** (only if the user will deploy their own contract). Run `forge --version`. If missing, give them the install command but don't run it: `curl -L https://foundry.paradigm.xyz | bash && foundryup`.
 
@@ -93,13 +95,11 @@ Three files must stay in sync. Make these edits:
 
 Show a diff before applying, then apply with Edit.
 
-## Step 5 — Fund the Compose wallet
+## Step 5 — Funding (skip on sponsored chains)
 
-The Compose wallet signs the on-chain `fulfillRandomness` tx, so it needs native gas on the target chain.
+Compose-managed (Privy) wallets default to `sponsorGas: true`, so on chains where Compose covers sponsorship (including Base Sepolia) the wallet needs no funding. Skip this step unless Step 8's smoke test fails with `insufficient funds for gas`.
 
-For mainnets: send a small amount of native gas token to `$COMPOSE_WALLET`. ~$1 is plenty to start.
-
-For testnets: use a faucet (e.g. https://www.alchemy.com/faucets/base-sepolia for Base Sepolia). Paste `$COMPOSE_WALLET` into the faucet, wait for confirmation.
+If your chain isn't sponsored: send a small amount of native gas token to `$COMPOSE_WALLET`. For testnets use a faucet (e.g. https://www.alchemy.com/faucets/base-sepolia for Base Sepolia).
 
 ## Step 6 — Optional: publish to a new GitHub repo
 
@@ -109,6 +109,10 @@ Only if the user said yes in Step 1.
 # From the example directory
 git init
 git add .
+# Sanity-check the staging area for secret-shaped files BEFORE committing.
+# Abort if any match — fix the .gitignore, run `git rm --cached <file>`, retry.
+git ls-files --cached | grep -iE '(keypair\.json|\.env|private[._-]?key|\.pem|id_rsa)' && \
+  { echo "ABORT: secret-shaped file staged"; exit 1; }
 git commit -m "Initial commit: Compose VRF"
 gh repo create <user's repo name> --<public|private> --source=. --push
 ```
@@ -158,7 +162,8 @@ If `isFulfilled` returns false or the logs show a revert, jump to Troubleshootin
 
 ## Troubleshooting
 
-- **`OnlyFulfiller()` revert on `fulfillRandomness`.** The contract's authorized fulfiller is not the Compose wallet. Either (a) redeploy the contract with `$COMPOSE_WALLET` as the constructor arg, or (b) call `setFulfiller($COMPOSE_WALLET)` on the contract from the original deployer EOA.
+- **Edits to `compose.yaml` or source files don't take effect after redeploy.** The local `.compose/` bundle cache is stale. Run `rm -rf .compose/` and redeploy.
+- **`OnlyFulfiller()` revert on `fulfillRandomness`.** The contract's authorized fulfiller is not the Compose wallet. Only the address currently holding the fulfiller role can rotate it (`setFulfiller` reverts unless `msg.sender == fulfiller`). If the wrong address went in at constructor time, redeploy is the only recovery path — the deployer EOA has no privileged role on the contract.
 - **Task doesn't fire when the event is emitted.** Check `compose.yaml` has the exact contract address (checksummed casing doesn't matter, but character match does) and the correct `network`. Also confirm your deploy succeeded and the trigger is active with `goldsky compose status`.
 - **`insufficient funds for gas`.** `$COMPOSE_WALLET` needs native token on the target chain. Send some.
 - **drand fetch fails.** The default drand endpoint is public. If drand is down, the retry config in `compose.yaml` (max 3, exponential backoff) handles transient failures. If it persistently fails, check https://api.drand.sh/chains.

@@ -2,7 +2,7 @@
 
 If a user asks you to set up, configure, or deploy this example, follow the setup skill at:
 
-**`.claude/skills/setup/SKILL.md`**
+**`.claude/skills/compose-nav-oracle-setup/SKILL.md`**
 
 That file is the canonical procedure. It walks the user through CLI install, a two-phase deploy (first deploy Compose to provision the publisher wallet address, then `forge create` the `ReserveAggregator` on each chain, then wire the addresses back into the task and redeploy), optional custodian URL swap, optional GitHub publishing, and the final log-tailing smoke test.
 

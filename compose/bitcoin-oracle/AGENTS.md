@@ -2,7 +2,7 @@
 
 If a user asks you to set up, configure, or deploy this example, follow the setup skill at:
 
-**`.claude/skills/setup/SKILL.md`**
+**`.claude/skills/compose-bitcoin-oracle-setup/SKILL.md`**
 
 That file is the canonical procedure. The example ships only the `PriceOracle` ABI (not Solidity source), so the skill handles two branches: bring-your-own contract (with a `setWriter`-style authorization step for the Compose wallet) or deploy-fresh (the skill provides the minimal reference `.sol`). It also walks through CLI install, chain selection, contract wiring, funding the Compose wallet (no sponsorship by default), optional GitHub publishing, and a log-tailing smoke test.
 

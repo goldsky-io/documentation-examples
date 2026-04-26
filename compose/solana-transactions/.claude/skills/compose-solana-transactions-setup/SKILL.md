@@ -1,5 +1,5 @@
 ---
-name: setup
+name: compose-solana-transactions-setup
 description: Configure and deploy this Compose solana-transactions example under the user's own Goldsky account. An HTTP-triggered task fetches BTC/USD from CoinGecko and writes it to a Solana Anchor program via a PDA, using Gill through Compose's sandboxed fetch. Walks a new user through CLI install, generating and funding a Solana keypair, creating Compose secrets (`SOLANA_RPC_URL`, `SOLANA_KEYPAIR`), choosing whether to target the shared demo program on devnet or their own Anchor program (with correct discriminator + PDA seeds), optional GitHub publishing, and a smoke test that returns a real Solana transaction signature. Use when a user has just cloned this example or asks to set up / deploy / configure the solana-transactions app.
 ---
 
@@ -15,18 +15,23 @@ Assume the user has never used Goldsky Compose or Solana tooling before.
 - **`SOLANA_KEYPAIR` must be the exact JSON byte-array format produced by `solana-keygen`** (e.g. `[12,34,56,...]`). Base58, hex, mnemonic, or any other representation will crash the task on `JSON.parse` (`src/tasks/solana-writer.ts:67`).
 - **The keypair account must hold SOL on the same network as `SOLANA_RPC_URL`.** Devnet SOL is not mainnet SOL. Missing funds = every tx fails silently at `sendTransaction`.
 - **Program ID, write discriminator, and PDA seeds are three parts of a single contract.** If the user changes the program target, all three must match the new program's IDL.
+- **`authentication: "none"` (the example default at `compose.yaml:11`) makes the deployed task publicly callable.** Anyone with the URL can drain the keypair's SOL via repeated invocations. Acceptable for local devnet testing only. Before deploying to mainnet-beta or any non-trivial RPC, change it to `"auth_token"`.
+
+## Variable handling for agents
+
+When this skill says `$FOO`, capture the literal value from the prior command's output and substitute it directly into the next command. Do not rely on shell variables persisting between separate Bash tool invocations — each invocation gets a fresh shell with no env carryover from earlier commands.
 
 ## Preflight
 
 1. **`goldsky` CLI** — `goldsky --version`. Install per https://docs.goldsky.com/reference/cli.
-2. **`goldsky` authenticated** — `goldsky project list`. If it errors, ask the user to run `goldsky login`.
+2. **`goldsky` authenticated** — `goldsky project list`. If it errors, stop and tell the user: "Please run `goldsky login` in your terminal — browser flow. Tell me to continue when you see the success message." Do not spawn `goldsky login` from Bash; it requires an interactive browser.
 3. **`solana` CLI** — `solana --version`. Needed to generate and fund a keypair. Install: `sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"`.
 4. **`node` + `npm`** — `npm --version`. The example has a `package.json` with `gill`; `npm install` must succeed before local `compose run`.
 
 ## Step 1 — Configuration interview
 
 1. **"App name?"** (default: `my-solana-app`) → `compose.yaml:1`.
-2. **"Which Solana network?"** (default: devnet) — pick one: devnet (`https://api.devnet.solana.com`), testnet (`https://api.testnet.solana.com`), mainnet-beta (`https://api.mainnet-beta.solana.com`), or a private RPC (Helius, QuickNode, etc.). For a first-time user, strongly recommend devnet.
+2. **"Which Solana network?"** (default: devnet) — pick one: devnet (`https://api.devnet.solana.com`), testnet (`https://api.testnet.solana.com`), mainnet-beta (`https://api.mainnet-beta.solana.com`), or a private RPC (Helius, QuickNode, etc.). For a first-time user, strongly recommend devnet. **If the user picks mainnet-beta or a private/paid RPC, also flip `authentication` at `compose.yaml:11` to `"auth_token"` before Step 7's deploy** — see Non-negotiables.
 3. **"Do you have your own Anchor program deployed, or should we target the shared demo program at `4MUYDek4T93NNN9dsRfxRTZc4KznZ1vTTe4vLtoS2AEs` on devnet?"**
    - Demo program is only available on devnet — it won't exist on mainnet or a custom RPC.
    - Own program path: you'll need the program ID, the 8-byte discriminator for the `write` instruction (from the IDL), and matching PDA seeds. Ask for all three.
@@ -66,12 +71,18 @@ After funding, double-check: `solana balance $SOLANA_ADDRESS --url <network>`.
 
 ## Step 4 — Create Compose secrets
 
-Both secrets are declared in `compose.yaml:3–5` as app-scoped, so create them with `goldsky compose secret set` (not the project-level `goldsky secret create`):
+Both secrets are declared in `compose.yaml:3–5` as app-scoped, so create them with `goldsky compose secret set` (not the project-level `goldsky secret create`).
+
+**Avoid putting the secret value on the command line** — `--value "<literal>"` writes the keypair into shell history (`~/.zsh_history` / `~/.bash_history`). Read it into a temporary variable in a single shell invocation so the literal never lands in history:
 
 ```bash
 goldsky compose secret set SOLANA_RPC_URL --value "https://api.devnet.solana.com"
-goldsky compose secret set SOLANA_KEYPAIR --value "$(cat ./keypair.json)"
+
+# Read the keypair into a variable and pipe it as the secret value in one shot:
+SOLANA_KP_VALUE="$(cat ./keypair.json)" goldsky compose secret set SOLANA_KEYPAIR --value "$SOLANA_KP_VALUE"; unset SOLANA_KP_VALUE
 ```
+
+(The RPC URL is not secret — fine on the command line.)
 
 For local testing, also create a `.env` file (already git-ignored by the example):
 
@@ -99,6 +110,10 @@ Verify `.gitignore` excludes `keypair.json`, `.env`, and `node_modules/`, then:
 ```bash
 git init
 git add .
+# Critical: keypair.json contains a real Solana private key. Abort if anything
+# secret-shaped is staged. Fix the .gitignore, `git rm --cached <file>`, retry.
+git ls-files --cached | grep -iE '(keypair\.json|\.env|private[._-]?key|\.pem|id_rsa)' && \
+  { echo "ABORT: secret-shaped file staged"; exit 1; }
 git commit -m "Initial commit: Compose solana-transactions"
 gh repo create <user's repo name> --<public|private> --source=. --push
 ```
@@ -108,6 +123,8 @@ gh repo create <user's repo name> --<public|private> --source=. --push
 ```bash
 goldsky compose deploy
 ```
+
+Capture the deployed task URL printed by `compose deploy` for `solana_writer` — you'll use it in Step 8 instead of constructing the URL by hand.
 
 ## Step 8 — Smoke test
 
@@ -137,6 +154,7 @@ If the task returns without a signature or throws, jump to Troubleshooting.
 
 ## Troubleshooting
 
+- **Edits to `compose.yaml` or source files don't take effect after redeploy.** The local `.compose/` bundle cache is stale. Run `rm -rf .compose/` and redeploy.
 - **`TypeError: Unexpected character in JSON` on `JSON.parse(env.SOLANA_KEYPAIR)`.** The secret isn't a JSON byte array. Re-create the secret from `cat ./keypair.json`; do not paste a base58 string.
 - **`Transaction simulation failed: Attempt to debit an account but found no record of a prior credit`.** The signer account has 0 SOL. Fund it per Step 3.
 - **`Blockhash not found` / stale blockhash.** The RPC is lagging or rate-limiting. For devnet, retry; for production, switch to a paid RPC (Helius, QuickNode, Triton).
@@ -146,7 +164,7 @@ If the task returns without a signature or throws, jump to Troubleshooting.
 
 ## What you should NOT do
 
-- Do not commit `keypair.json` or `.env`. Both must be in `.gitignore`.
+- Do not commit `keypair.json` or `.env`. Both are in `.gitignore`; verify before any `git add`.
 - Do not change `createSandboxedTransport` in `solana-writer.ts` unless the user explicitly wants to use a Solana library other than Gill. The pattern intentionally routes all RPC traffic through Compose's sandboxed fetch for auditability.
-- Do not set `authentication: "auth_token"` in `compose.yaml` unless the user asks — the example deliberately uses `none` to simplify local testing. Flag this as a security trade-off if left on `none` for production.
+- Do not leave `authentication: "none"` on a production deploy — see Non-negotiables for the drain risk.
 - Do not hardcode the RPC URL in source. `env.SOLANA_RPC_URL` already takes precedence over the `DEVNET_RPC_URL` fallback (line 62); keep it that way so swapping networks is a secret change, not a code change.

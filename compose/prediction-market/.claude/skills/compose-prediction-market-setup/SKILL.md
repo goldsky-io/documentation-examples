@@ -1,5 +1,5 @@
 ---
-name: setup
+name: compose-prediction-market-setup
 description: Configure and deploy this Compose prediction-market example under the user's own Goldsky account. A cron orchestrator (default every 5 minutes on Base Sepolia) launches a fresh BTC UP/DOWN prediction market on the Gnosis ConditionalTokens (CTF) contract each cycle, resolves the previous cycle's market, and acts as the market oracle. Walks a new user through CLI install, choosing chain + asset + market duration, finding the correct CTF address on their chosen chain, optionally swapping the price source, optional GitHub publishing, and a BaseScan-style smoke test. No contracts to deploy, no private keys, no funding — gas is sponsored. Use when a user has just cloned this example or asks to set up / deploy / configure the prediction-market app.
 ---
 
@@ -17,10 +17,14 @@ This is the lowest-setup-cost example in the repo: no contracts to deploy, no se
 - **`CTF_ADDRESS` (`constants.ts:13`) is chain-specific.** The Gnosis CTF is deployed at different addresses on different chains. Using the Base Sepolia address on Polygon will silently produce transactions that revert or hit an EOA. Always verify the address for the user's target chain.
 - **`ASSET_PAIR` (`constants.ts:26`) and `PRICE_URL` (`constants.ts:38–39`) are coupled.** If the user wants ETH/USD instead of BTC/USD, they must update both constants *and* the response parser at `src/tasks/market-data.ts:25` (which currently reads `response.bitcoin.usd` — needs to change to `response.ethereum.usd`).
 
+## Variable handling for agents
+
+When this skill says `$FOO`, capture the literal value from the prior command's output and substitute it directly into the next command. Do not rely on shell variables persisting between separate Bash tool invocations — each invocation gets a fresh shell with no env carryover from earlier commands.
+
 ## Preflight
 
 1. **`goldsky` CLI** — `goldsky --version`.
-2. **`goldsky` authenticated** — `goldsky project list`.
+2. **`goldsky` authenticated** — `goldsky project list`. If it errors, stop and tell the user: "Please run `goldsky login` in your terminal — browser flow. Tell me to continue when you see the success message." Do not spawn `goldsky login` from Bash; it requires an interactive browser.
 3. **`deno`** — `deno --version`.
 
 That's it. No Foundry, no npm, no Solana tooling.
@@ -64,13 +68,15 @@ const priceUsd = response?.ethereum?.usd;
 
 Update the TypeScript type on line 16 to match (`{ ethereum?: { usd?: number } }`).
 
-If market duration changed, also edit `compose.yaml:11` — the cron cadence should match `DURATION_SEC`. For 5-min markets: `"10 */5 * * * *"` (cron quantum seconds: 10s offset, every 5 min). For hourly markets: `"0 0 * * * *"` or similar.
+If market duration changed, also edit `compose.yaml:11` — the cron cadence should match `DURATION_SEC`. **Compose uses 6-field cron with seconds (`sec min hr day mon dow`), not the standard 5-field format.** For 5-min markets: `"10 */5 * * * *"` (10s offset into each 5-min boundary). For hourly markets: `"0 0 * * * *"` (offset 0s, minute 0, every hour). Do not use 5-field cron expressions here — they will fail to parse.
 
 ## Step 4 — Optional: publish to a new GitHub repo
 
 ```bash
 git init
 git add .
+git ls-files --cached | grep -iE '(keypair\.json|\.env|private[._-]?key|\.pem|id_rsa)' && \
+  { echo "ABORT: secret-shaped file staged"; exit 1; }
 git commit -m "Initial commit: Compose prediction-market"
 gh repo create <user's repo name> --<public|private> --source=. --push
 ```
@@ -88,10 +94,10 @@ Gas is sponsored by default (`context.evm.wallet({ name: ORACLE_WALLET_NAME })` 
 **Get the oracle wallet address:**
 
 ```bash
-goldsky compose wallet create prediction-market-oracle
+goldsky compose wallet create <ORACLE_WALLET_NAME from constants.ts>
 ```
 
-This is the same name as `ORACLE_WALLET_NAME` in `constants.ts:20`. The command prints the address — save as `$ORACLE`. If the wallet already exists (e.g. from the deploy having run one cycle), it just prints the existing address.
+Substitute the value the user chose for `ORACLE_WALLET_NAME` (default: `prediction-market-oracle`). The command prints the address — save as `$ORACLE`. If the wallet already exists (e.g. from the deploy having run one cycle), it prints the existing address.
 
 **Tail logs and wait for the next cron fire.** Cron is `10 */5 * * * *` — fires at :10, :15, :20, etc. of each hour (with a 10-second offset from the boundary to let CoinGecko settle).
 
@@ -117,6 +123,7 @@ Filter events to the oracle address (`$ORACLE`) — topic[2] of `ConditionPrepar
 
 ## Troubleshooting
 
+- **Edits to `compose.yaml` or source files don't take effect after redeploy.** The local `.compose/` bundle cache is stale. Run `rm -rf .compose/` and redeploy.
 - **`cycle complete` never logs.** Check that the deploy succeeded and the cron trigger is active: `goldsky compose status`.
 - **`Unexpected CoinGecko response shape`.** The asset field in the response doesn't match. Re-check `src/tasks/market-data.ts:25` and ensure the field matches the asset in `PRICE_URL` (e.g. `ids=ethereum` → `response.ethereum.usd`).
 - **`resolveErrors=1` or higher.** Check `goldsky compose logs` for the underlying error. Two benign cases (the code catches them): "condition already prepared" and "payout denominator already set" — both mean a retry hit a tx that landed but the client didn't know yet. Errors other than those are real problems.

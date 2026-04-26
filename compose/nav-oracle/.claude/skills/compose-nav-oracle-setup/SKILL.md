@@ -1,5 +1,5 @@
 ---
-name: setup
+name: compose-nav-oracle-setup
 description: Configure and deploy this Compose nav-oracle example under the user's own Goldsky account. A cron task (default every 5 min) fetches a NAV bundle from a custodian endpoint and publishes it to ReserveAggregator contracts on Base Sepolia and Arbitrum Sepolia. Walks a new user through CLI install, deploying two instances of ReserveAggregator.sol (one per chain) with the Compose-managed publisher wallet, wiring addresses into the task, swapping the custodian URL, optionally publishing to a new GitHub repo, and the final deploy + log-tailing smoke test. Use when a user has just cloned this example or asks to set up / deploy / configure the nav-oracle app.
 ---
 
@@ -16,10 +16,14 @@ Assume the user has never used Goldsky Compose before. Do not skip preflight.
 - **The SALT-like detail here is the custodian's JSON schema.** If the custodian response doesn't match the `CustodianResponse` interface in `src/tasks/nav-oracle.ts` exactly (`accountName`, `asOf`, `cash`, `tbills`, `repo`, `totalNav`, `ripcord`), publishes silently drop or throw on parse.
 - **Do not touch `src/lib/scaling.ts`.** The 18-decimal scaling is coupled to the contract's `decimals()` return value (also hardcoded at 18).
 
+## Variable handling for agents
+
+When this skill says `$FOO`, capture the literal value from the prior command's output and substitute it directly into the next command. Do not rely on shell variables persisting between separate Bash tool invocations — each invocation gets a fresh shell with no env carryover from earlier commands.
+
 ## Preflight
 
 1. **`goldsky` CLI** — run `goldsky --version`. If missing, install per https://docs.goldsky.com/reference/cli.
-2. **`goldsky` authenticated** — run `goldsky project list`. If it errors, ask the user to run `goldsky login` themselves (browser flow), or accept a CLI auth token via `--token <token>` on each command.
+2. **`goldsky` authenticated** — run `goldsky project list`. If it errors, stop and tell the user: "Please run `goldsky login` in your terminal — browser flow. Tell me to continue when you see the success message." Do not spawn `goldsky login` from Bash — it needs an interactive browser. Alternative: the user passes `--token <token>` on each command.
 3. **`deno`** — run `deno --version`. Install with `curl -fsSL https://deno.land/install.sh | sh` if missing.
 4. **`foundry`** — run `forge --version`. Contract deployment needs it. Install: `curl -L https://foundry.paradigm.xyz | bash && foundryup`.
 
@@ -87,6 +91,8 @@ If the user wants a custom cron cadence, edit `compose.yaml:9`.
 ```bash
 git init
 git add .
+git ls-files --cached | grep -iE '(keypair\.json|\.env|private[._-]?key|\.pem|id_rsa)' && \
+  { echo "ABORT: secret-shaped file staged"; exit 1; }
 git commit -m "Initial commit: Compose nav-oracle"
 gh repo create <user's repo name> --<public|private> --source=. --push
 ```
@@ -119,7 +125,8 @@ Sanity-test the ripcord: if the user controls the custodian endpoint, flip `"rip
 
 ## Troubleshooting
 
-- **`OnlyPublisher()` revert.** `$PUBLISHER` you wired into the forge constructor doesn't match the Compose wallet. Re-read the log line from Step 2, or call `setPublisher($PUBLISHER)` on the contract from the EOA that deployed it.
+- **Edits to `compose.yaml` or source files don't take effect after redeploy.** The local `.compose/` bundle cache is stale. Run `rm -rf .compose/` and redeploy.
+- **`OnlyPublisher()` revert.** `$PUBLISHER` you wired into the forge constructor doesn't match the Compose wallet. Only the address currently holding the publisher role can rotate it (`setPublisher` reverts unless `msg.sender == publisher`). If the wrong address went in at constructor time, redeploy is the only recovery path — the deployer EOA has no privileged role on the contract.
 - **Task keeps logging `skipped: unconfigured`.** One of `BASE_SEPOLIA_AGGREGATOR` / `ARBITRUM_SEPOLIA_AGGREGATOR` is still the zero address. Re-check `src/tasks/nav-oracle.ts` lines 22–23.
 - **Custodian fetch fails with JSON parse error.** The custodian response does not match the `CustodianResponse` shape. All seven fields are required; `cash`/`tbills`/`repo`/`totalNav` must be JSON numbers (not strings), `asOf` must be ISO 8601, `ripcord` must be boolean.
 - **Both `baseSepolia` and `arbitrumSepolia` writes fail.** The task throws and the retry config kicks in (2 attempts, 2s/4s backoff). If it persists, check `https://sepolia.basescan.org/address/$BASE_AGG` for recent state — the contract may be self-destructed, paused by a bad `setPublisher`, or on the wrong chain.
@@ -127,7 +134,7 @@ Sanity-test the ripcord: if the user controls the custodian endpoint, flip `"rip
 
 ## What you should NOT do
 
-- Do not remove `sponsorGas: true` from `src/tasks/nav-oracle.ts:49`. Without it the publisher wallet needs native gas on both chains and gets expensive fast.
+- Keep `sponsorGas: true` on the `evm.wallet({...})` call. Managed (Privy) wallets default to `true` already; the explicit setting is for clarity. Do not flip it to `false` — the publisher would then need native gas on both chains.
 - Do not change `toScaled18` in `src/lib/scaling.ts` or the `decimals()` return on the contract. They're coupled.
 - Do not add historical round support to `ReserveAggregator.sol` as part of setup — the README notes this is a demo simplification. If the user asks for it, that's a separate change, not setup.
 - Do not add a `PRIVATE_KEY` secret. The publisher is a Compose-managed wallet with gas sponsorship; the user's EOA is only used once, for `forge create`.

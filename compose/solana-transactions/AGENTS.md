@@ -2,7 +2,7 @@
 
 If a user asks you to set up, configure, or deploy this example, follow the setup skill at:
 
-**`.claude/skills/setup/SKILL.md`**
+**`.claude/skills/compose-solana-transactions-setup/SKILL.md`**
 
 That file is the canonical procedure. It covers CLI install (goldsky, solana, node), keypair generation and funding, creating the two required Compose secrets (`SOLANA_RPC_URL`, `SOLANA_KEYPAIR`), the choice of targeting the shared demo Anchor program on devnet vs the user's own program (with discriminator + PDA seed edits), optional GitHub publishing, and a smoke test that returns a real on-chain Solana transaction signature.
 

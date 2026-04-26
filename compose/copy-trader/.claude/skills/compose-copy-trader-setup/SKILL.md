@@ -1,5 +1,5 @@
 ---
-name: setup
+name: compose-copy-trader-setup
 description: Configure and deploy this Compose + Turbo copy-trader example under the user's own Goldsky account. A Turbo pipeline indexes Polymarket OrderFilled events on Polygon for a set of watched wallets and webhooks each fill into a Compose app, which mirrors the trade on the Polymarket CLOB via a Fly.io proxy. Walks a new user through CLI install, picking wallets to copy, funding an EOA with USDC.e, creating `PRIVATE_KEY` + `COMPOSE_WEBHOOK_AUTH` secrets, deploying the Compose app and pipeline, running one-time approvals, optional GitHub publishing, and a smoke test using a real or synthetic fill. Use when a user has just cloned this example or asks to set up / deploy / configure the copy-trader app.
 ---
 
@@ -17,10 +17,14 @@ This is the most complex example. Do not skip any preflight or ordering step.
 - **The `PRIVATE_KEY` secret is a real funded EOA on Polygon mainnet.** This is not a testnet. Treat the key with care; do not print it, commit it, or log it. Polymarket CLOB orders are signed as this EOA — orders execute for real money.
 - **US geo-blocking:** Polymarket's CLOB API blocks US IPs. Compose hosts may be in the US. The default `CLOB_HOST` is a shared Fly.io proxy in the EU. For production, the user should deploy their own proxy (link in README).
 
+## Variable handling for agents
+
+When this skill says `$FOO`, capture the literal value from the prior command's output and substitute it directly into the next command. Do not rely on shell variables persisting between separate Bash tool invocations — each invocation gets a fresh shell with no env carryover from earlier commands.
+
 ## Preflight
 
 1. **`goldsky` CLI** — `goldsky --version`.
-2. **`goldsky` authenticated** — `goldsky project list`.
+2. **`goldsky` authenticated** — `goldsky project list`. If it errors, stop and tell the user: "Please run `goldsky login` in your terminal — browser flow. Tell me to continue when you see the success message." Do not spawn `goldsky login` from Bash; it requires an interactive browser.
 3. **`node` + `npm`** — `npm --version`. Run `npm install` before anything else; Compose bundles `package-lock.json` deps with esbuild.
 4. **`foundry` (optional)** — `cast --version`. Useful for checking USDC.e balance and deriving an address from a private key during setup.
 
@@ -55,10 +59,13 @@ Required for Compose's bundler to resolve imports (`viem`, etc.).
 
 ## Step 5 — Create the `PRIVATE_KEY` secret
 
-Set the EOA private key (the one funding USDC.e and signing orders):
+Set the EOA private key (the one funding USDC.e and signing orders).
+
+**Avoid putting the key on the command line** — `--value "<literal>"` writes the value into shell history. Stop and ask the user to paste the key into chat (do not type it yourself), then construct the secret-set command with the literal token inlined as a single shell invocation. Or have them set the value through the Goldsky dashboard.
 
 ```bash
-goldsky compose secret set PRIVATE_KEY --value "0x<hex>"
+# The value of $EOA_PK never lands in history because it's only set inline:
+EOA_PK="0x<paste hex>" goldsky compose secret set PRIVATE_KEY --value "$EOA_PK"; unset EOA_PK
 ```
 
 This is a Compose-app-scoped secret referenced at `compose.yaml:5`. The `0x` prefix is tolerated but optional.
@@ -67,18 +74,18 @@ This is a Compose-app-scoped secret referenced at `compose.yaml:5`. The `0x` pre
 
 The pipeline needs a bearer token to POST into the Compose app. This is a **project-level** secret (not per-app), so it only needs to be created once per Goldsky project — if the user has already created it for another pipeline, skip this step.
 
-First, the user needs a Compose API token. There's no CLI command for this — direct them to the Goldsky dashboard (https://app.goldsky.com) to create one. Have them export it to a shell variable so it doesn't end up in their shell history directly:
+First, the user needs a Compose API token. There's no CLI command for this — direct them to the Goldsky dashboard (https://app.goldsky.com) to create one.
+
+This step is best run by the user in their own terminal, not by the agent. Reason: putting the token on a command line via the agent's Bash tool ends up in the user's shell history (or the agent's tool log), and agent Bash typically has no TTY so `read -s` doesn't hide input. Stop, output the command template below, and ask the user to substitute the token and run it themselves:
 
 ```bash
-read -s COMPOSE_TOKEN && export COMPOSE_TOKEN
-# paste the token, press Enter (the -s flag hides input)
-```
+read -s COMPOSE_TOKEN
+# (paste the token, press Enter; the -s flag hides it from the terminal)
 
-Then create the project-scoped webhook auth secret:
-
-```bash
 goldsky secret create --name COMPOSE_WEBHOOK_AUTH \
-  --value "{\"type\": \"httpauth\", \"secretKey\": \"Authorization\", \"secretValue\": \"Bearer $COMPOSE_TOKEN\"}"
+  --value "{\"type\":\"httpauth\",\"secretKey\":\"Authorization\",\"secretValue\":\"Bearer $COMPOSE_TOKEN\"}"
+
+unset COMPOSE_TOKEN
 ```
 
 Referenced at pipeline YAML line 77.
@@ -127,7 +134,7 @@ Divide by `1e6` to get the USDC value.
 
 The `setup_approvals` task grants the two exchanges permission to pull USDC and CTF shares from the EOA. Idempotent — safe to re-run.
 
-The task is deployed with `authentication: "auth_token"` (`compose.yaml:28`, `:34`), so it must be called via HTTP with the token from Step 6. `goldsky compose callTask` only works against local servers, not the deployed app.
+The task is deployed with `authentication: "auth_token"` (`compose.yaml:34`), so it must be called via HTTP with the token from Step 6. `goldsky compose callTask` only works against local servers, not the deployed app.
 
 ```bash
 curl -X POST \
@@ -142,13 +149,17 @@ Expect 4 sponsored on-chain transactions (USDC approval × 2 exchanges, CTF `set
 ```bash
 git init
 git add .
+# PRIVATE_KEY for a Polygon mainnet EOA holding USDC.e is real money. Abort
+# if anything secret-shaped is staged. Fix .gitignore, `git rm --cached`, retry.
+git ls-files --cached | grep -iE '(keypair\.json|\.env|private[._-]?key|\.pem|id_rsa)' && \
+  { echo "ABORT: secret-shaped file staged"; exit 1; }
 git commit -m "Initial commit: Compose copy-trader"
 gh repo create <user's repo name> --<public|private> --source=. --push
 ```
 
 ## Step 11 — Smoke test
 
-**Option A — synthetic webhook.** Post a fake `OrderFillRow` to the `copy_trade` endpoint. Expect a `MARKET_NOT_FOUND` response (webhook auth passed, market lookup failed on the fake tokenId — this proves the wiring). Example:
+**Option A — synthetic webhook.** Post a fake `OrderFillRow` to the `copy_trade` endpoint. Expect a `MARKET_NOT_FOUND` response (webhook auth passed, market lookup failed on the fake tokenId — this proves auth + WATCHED_WALLETS substitution + market-lookup wiring, but **does not** test the pipeline → webhook flow). For end-to-end verification of the pipeline path, use Option B. Substitute a real watched wallet for `<one watched wallet lowercase>` — if you see `NO_POSITION` instead of `MARKET_NOT_FOUND`, the maker is not in WATCHED_WALLETS and the test is invalid. Example:
 
 ```bash
 curl -X POST \
@@ -175,6 +186,7 @@ goldsky turbo logs polymarket-ctf-events
 
 ## Troubleshooting
 
+- **Edits to `compose.yaml` or source files don't take effect after redeploy.** The local `.compose/` bundle cache is stale. Run `rm -rf .compose/` and redeploy.
 - **Webhook returns 401.** `COMPOSE_WEBHOOK_AUTH` secret is wrong or missing. Re-create it per Step 6, making sure the token is a valid Compose API token and the JSON is correctly escaped.
 - **Webhook returns 404.** Pipeline URL path segment doesn't match the deployed app name. Check pipeline YAML line 76.
 - **`copy_trade` returns `BALANCE_LOW`.** EOA has less than $1.10 USDC.e. Top up.

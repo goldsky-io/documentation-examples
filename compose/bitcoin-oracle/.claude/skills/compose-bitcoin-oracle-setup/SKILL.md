@@ -1,5 +1,5 @@
 ---
-name: setup
+name: compose-bitcoin-oracle-setup
 description: Configure and deploy this Compose bitcoin-oracle example under the user's own Goldsky account. A cron task (default every minute) fetches BTC/USD from CoinGecko and writes `(timestamp, price)` as `bytes32` values to an on-chain `PriceOracle` contract. Walks a new user through CLI install, providing or deploying a PriceOracle-shaped contract (the example ships only the ABI, not Solidity source), wiring the contract address and chain into the task, optional GitHub publishing, and a log-tailing smoke test. Use when a user has just cloned this example or asks to set up / deploy / configure the bitcoin-oracle app.
 ---
 
@@ -16,10 +16,14 @@ Assume the user has never used Goldsky Compose before. Do not skip preflight.
 - **Three values in `src/tasks/bitcoin-oracle.ts` must be consistent with each other: the contract address (line 5), the chain (line 15), and the access-control state on that contract.** If the contract has an `onlyOwner`/authorized-writer modifier, the Compose wallet must be the authorized writer; otherwise every `write()` reverts.
 - **Do not touch `src/lib/utils.ts`.** `toBytes32` is coupled to how the contract stores the value.
 
+## Variable handling for agents
+
+When this skill says `$FOO`, capture the literal value from the prior command's output and substitute it directly into the next command. Do not rely on shell variables persisting between separate Bash tool invocations — each invocation gets a fresh shell with no env carryover from earlier commands.
+
 ## Preflight
 
 1. **`goldsky` CLI** — `goldsky --version`. Install per https://docs.goldsky.com/reference/cli.
-2. **`goldsky` authenticated** — `goldsky project list`. If it errors, ask the user to run `goldsky login` themselves.
+2. **`goldsky` authenticated** — `goldsky project list`. If it errors, stop and tell the user: "Please run `goldsky login` in your terminal — browser flow. Tell me to continue when you see the success message." Do not spawn `goldsky login` from Bash; it requires an interactive browser.
 3. **`deno`** — `deno --version`. `curl -fsSL https://deno.land/install.sh | sh` if missing.
 4. **`foundry`** — `forge --version`. Only needed if the user is deploying a fresh `PriceOracle`.
 
@@ -51,7 +55,7 @@ Save the printed address as `$COMPOSE_WALLET`.
 2. Grant the Compose wallet write permission on the contract (`setWriter($COMPOSE_WALLET)` or equivalent from the contract's owner EOA).
 3. Give you the contract address as `$CONTRACT_ADDRESS`.
 
-**Branch B — Deploy fresh.** The example doesn't ship a `.sol` source file, so write this minimal reference contract to `contracts/PriceOracle.sol`:
+**Branch B — Deploy fresh.** The example doesn't ship a `.sol` source file, and the example directory has no `contracts/` subdirectory. Run `mkdir -p contracts` first, then write this minimal reference contract to `contracts/PriceOracle.sol`:
 
 ```solidity
 // SPDX-License-Identifier: MIT
@@ -110,20 +114,21 @@ Edit `src/tasks/bitcoin-oracle.ts`:
 
 If the user changed the cron cadence, edit `compose.yaml:8`.
 
-## Step 5 — Fund the Compose wallet
+## Step 5 — Gas: sponsorship vs funding
 
-The wallet signs a transaction every minute by default. On mainnets this costs gas — send native token to `$COMPOSE_WALLET`.
+Compose-managed (Privy) wallets default to `sponsorGas: true` on chains where Compose covers sponsorship (Base, Base Sepolia, Polygon, Polygon Amoy, and others — verify in the Goldsky docs for your chain). On those chains, the wallet needs no funding.
 
-- Testnets: use a faucet (Polygon Amoy: https://faucet.polygon.technology).
-- Mainnets: send ~$5–10 of native token to start; monitor usage and top up.
+If the user is on a sponsored chain: skip funding. The default is already correct.
 
-If the user picked a chain where gas sponsorship is available and wants to enable it, add `sponsorGas: true` to the `evm.wallet({...})` call at line 10 — but do not do this by default; it's an explicit choice.
+If the user is on a non-sponsored chain: send native gas token to `$COMPOSE_WALLET`. Testnets use a faucet (Polygon Amoy: https://faucet.polygon.technology). Mainnets: budget for the cron cadence — every-minute writes on mainnet ≈ 1,440 tx/day. For a tighter budget, reduce cadence in `compose.yaml` to e.g. `*/5 * * * *` (every 5 min) before deploying.
 
 ## Step 6 — Optional: publish to a new GitHub repo
 
 ```bash
 git init
 git add .
+git ls-files --cached | grep -iE '(keypair\.json|\.env|private[._-]?key|\.pem|id_rsa)' && \
+  { echo "ABORT: secret-shaped file staged"; exit 1; }
 git commit -m "Initial commit: Compose bitcoin-oracle"
 gh repo create <user's repo name> --<public|private> --source=. --push
 ```
@@ -151,6 +156,7 @@ Verify on-chain:
 
 ## Troubleshooting
 
+- **Edits to `compose.yaml` or source files don't take effect after redeploy.** The local `.compose/` bundle cache is stale. Run `rm -rf .compose/` and redeploy.
 - **Every cron run fails with a revert.** The Compose wallet isn't authorized to call `write()`. In Branch A, re-run the contract owner's `setWriter($COMPOSE_WALLET)`. In Branch B, re-check the constructor arg used in `forge create` matches `$COMPOSE_WALLET`.
 - **`insufficient funds for gas`.** Fund `$COMPOSE_WALLET` with native gas token on the target chain.
 - **CoinGecko 429 / rate-limited.** The default retry config (3 attempts, 1s/2s backoff at `bitcoin-oracle.ts` lines 23–25) handles transient rate-limits. If it's persistent, either reduce cron cadence (e.g. `*/5 * * * *`) or switch to a paid API.

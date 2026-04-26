@@ -2,7 +2,7 @@
 
 If a user asks you to set up, configure, or deploy this example, follow the setup skill at:
 
-**`.claude/skills/setup/SKILL.md`**
+**`.claude/skills/compose-prediction-market-setup/SKILL.md`**
 
 That file is the canonical procedure. It covers CLI install, chain + asset + duration selection, finding the Gnosis CTF address for the chosen chain, the three-file update required to swap asset pair (constants, price URL, market-data response parser), optional GitHub publishing, and a BaseScan-style smoke test. No contracts to deploy, no secrets, no wallet funding — this is the lowest-setup-cost example in the repo.
 

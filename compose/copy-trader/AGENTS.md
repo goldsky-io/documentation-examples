@@ -2,7 +2,7 @@
 
 If a user asks you to set up, configure, or deploy this example, follow the setup skill at:
 
-**`.claude/skills/setup/SKILL.md`**
+**`.claude/skills/compose-copy-trader-setup/SKILL.md`**
 
 That file is the canonical procedure. It walks through CLI install, the Compose + Turbo pipeline two-phase deploy (Compose first, then pipeline — the order matters because the pipeline references the app URL), two required secrets (`PRIVATE_KEY` app-scoped and `COMPOSE_WEBHOOK_AUTH` project-scoped), the critical `WATCHED_WALLETS` match between `compose.yaml` and the pipeline YAML, funding an EOA with USDC.e on Polygon, one-time approvals, and both synthetic and live smoke tests.
 
