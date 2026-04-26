@@ -2,25 +2,26 @@ name: "corp-actions-balances-arb-sepolia"
 resource_size: s
 
 sources:
-  transfers:
+  logs:
     type: dataset
-    dataset_name: arbitrum_sepolia.erc20_transfers
+    dataset_name: arbitrum_sepolia.raw_logs
     version: 1.0.0
     start_at: earliest
 
 transforms:
-  filtered:
+  transfers:
     type: sql
     primary_key: id
     sql: |
       SELECT id,
              block_number,
-             lower(address)   AS token,
-             lower(recipient) AS recipient,
-             lower(sender)    AS sender,
-             amount
-      FROM transfers
+             lower(address) AS token,
+             concat('0x', substr(topics[2], 27, 40)) AS sender,
+             concat('0x', substr(topics[3], 27, 40)) AS recipient,
+             to_u256(data) AS amount
+      FROM logs
       WHERE lower(address) = lower('0x81051f77ea167b631Dd7F40ac414A9F9344Fb162')
+        AND topics[1] = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 
   signed_deltas:
     type: sql
@@ -31,16 +32,16 @@ transforms:
              token,
              'arbitrumSepolia' AS chain,
              recipient AS account,
-             CAST(to_u256(amount) AS DECIMAL(38,0)) AS delta
-      FROM filtered
+             CAST(amount AS DECIMAL(38,0)) AS delta
+      FROM transfers
       UNION ALL
       SELECT CONCAT(id, '-debit') AS id,
              block_number,
              token,
              'arbitrumSepolia' AS chain,
              sender AS account,
-             -CAST(to_u256(amount) AS DECIMAL(38,0)) AS delta
-      FROM filtered
+             -CAST(amount AS DECIMAL(38,0)) AS delta
+      FROM transfers
       WHERE sender != '0x0000000000000000000000000000000000000000'
 
 sinks:
@@ -51,7 +52,7 @@ sinks:
     landing_table: share_transfer_log
     agg_table: share_balances
     primary_key: id
-    secret_name: CORPORATE_ACTIONS  # auto-created by `goldsky compose deploy`
+    secret_name: CORPORATE_ACTIONS
     group_by:
       account: { type: text }
       token:   { type: text }

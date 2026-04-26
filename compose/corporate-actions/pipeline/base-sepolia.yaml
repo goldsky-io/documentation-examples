@@ -1,26 +1,33 @@
 name: "corp-actions-balances-base-sepolia"
 resource_size: s
 
+# Index ERC-20 Transfer events of our ShareToken from raw_logs (the
+# erc20_transfers dataset's `amount` column is FixedSizeBinary which
+# DataFusion can't cast directly to a numeric type).
+
 sources:
-  transfers:
+  logs:
     type: dataset
-    dataset_name: base_sepolia.erc20_transfers
+    dataset_name: base_sepolia.raw_logs
     version: 1.0.0
     start_at: earliest
 
 transforms:
-  filtered:
+  transfers:
     type: sql
     primary_key: id
     sql: |
       SELECT id,
              block_number,
-             lower(address)   AS token,
-             lower(recipient) AS recipient,
-             lower(sender)    AS sender,
-             amount
-      FROM transfers
+             lower(address) AS token,
+             -- topic[1] and topic[2] are 32-byte left-padded addresses
+             concat('0x', substr(topics[2], 27, 40)) AS sender,
+             concat('0x', substr(topics[3], 27, 40)) AS recipient,
+             -- data is the uint256 value as a 32-byte hex string
+             to_u256(data) AS amount
+      FROM logs
       WHERE lower(address) = lower('0x2d134178F9efC772A93BB83632965E6b731e1E19')
+        AND topics[1] = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 
   signed_deltas:
     type: sql
@@ -31,16 +38,16 @@ transforms:
              token,
              'baseSepolia' AS chain,
              recipient AS account,
-             CAST(to_u256(amount) AS DECIMAL(38,0)) AS delta
-      FROM filtered
+             CAST(amount AS DECIMAL(38,0)) AS delta
+      FROM transfers
       UNION ALL
       SELECT CONCAT(id, '-debit') AS id,
              block_number,
              token,
              'baseSepolia' AS chain,
              sender AS account,
-             -CAST(to_u256(amount) AS DECIMAL(38,0)) AS delta
-      FROM filtered
+             -CAST(amount AS DECIMAL(38,0)) AS delta
+      FROM transfers
       WHERE sender != '0x0000000000000000000000000000000000000000'
 
 sinks:
@@ -51,7 +58,7 @@ sinks:
     landing_table: share_transfer_log
     agg_table: share_balances
     primary_key: id
-    secret_name: CORPORATE_ACTIONS  # auto-created by `goldsky compose deploy`
+    secret_name: CORPORATE_ACTIONS
     group_by:
       account: { type: text }
       token:   { type: text }
