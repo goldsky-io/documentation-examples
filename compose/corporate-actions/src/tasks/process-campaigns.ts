@@ -18,16 +18,33 @@ import type { Campaign, Payout } from "../lib/types";
  *   5. When all holders are paid on-chain, mark the campaign complete.
  */
 export async function main(context: TaskContext) {
-  const { collection } = context;
+  const { collection, evm } = context;
+
+  // Pre-fetch the operator wallet so its address shows up in logs early and
+  // the Privy auto-provisioning path runs on first cron tick. This avoids
+  // depending on `goldsky compose wallet create --env cloud`, which can fail
+  // in environments where the api-server doesn't have Privy creds wired.
+  const wallet = await evm.wallet({
+    name: "corp-actions-operator",
+    sponsorGas: true,
+  });
+
   const campaigns = await collection<Campaign>("campaigns");
   const active = await campaigns.findMany({
     status: { $in: ["pending", "in-progress"] },
   });
 
+  if (active.length === 0) {
+    console.log(
+      `Operator wallet: ${wallet.address}. No active campaigns; idle.`,
+    );
+    return { processed: 0, operator: wallet.address };
+  }
+
   for (const campaign of active) {
     await processCampaign(context, campaigns, campaign);
   }
-  return { processed: active.length };
+  return { processed: active.length, operator: wallet.address };
 }
 
 async function processCampaign(
@@ -38,7 +55,7 @@ async function processCampaign(
   const cfg = CHAIN_CONFIG[campaign.chain];
 
   // --- Finality gate ---
-  const pipelineHead = await getPipelineHeadBlock(campaign.chain);
+  const pipelineHead = await getPipelineHeadBlock(context, campaign.chain);
   const recordBlock = BigInt(campaign.recordBlock);
   const requiredHead = recordBlock + BigInt(FINALITY_DEPTH);
   if (pipelineHead < requiredHead) {
@@ -50,7 +67,7 @@ async function processCampaign(
   }
 
   // --- Snapshot holders ---
-  const holders = await getHolders(campaign.shareToken, campaign.chain);
+  const holders = await getHolders(context, campaign.shareToken, campaign.chain);
   if (holders.length === 0) {
     console.log(
       `[${campaign.userId}/${campaign.chain}] no holders found in share_balances; skipping`,
