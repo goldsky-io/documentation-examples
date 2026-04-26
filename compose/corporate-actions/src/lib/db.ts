@@ -78,9 +78,12 @@ export async function getHolders(
        ORDER BY account ASC`,
     [token.toLowerCase(), chain],
   );
+  // share_balances.balance is DOUBLE PRECISION (DataFusion can't cast
+  // FixedSizeBinary→Decimal, so we store as DOUBLE and accept ~16-digit precision).
+  // Convert to bigint via Math.round → BigInt to keep the rest of the math integer.
   return rows.map((r) => ({
     address: String(r.account).toLowerCase() as Hex,
-    balance: BigInt(String(r.balance)),
+    balance: BigInt(Math.round(Number(r.balance))),
   }));
 }
 

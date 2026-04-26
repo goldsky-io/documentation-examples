@@ -33,7 +33,7 @@ transforms:
              token,
              'baseSepolia' AS chain,
              lower(`decoded`.event_params[2]) AS account,
-             CAST(to_u256(`decoded`.event_params[3]) AS DECIMAL(38,0)) AS delta
+             CAST(`decoded`.event_params[3] AS DOUBLE) AS delta
       FROM decoded_transfers
       WHERE `decoded`.event_signature = 'Transfer'
       UNION ALL
@@ -42,7 +42,7 @@ transforms:
              token,
              'baseSepolia' AS chain,
              lower(`decoded`.event_params[1]) AS account,
-             -CAST(to_u256(`decoded`.event_params[3]) AS DECIMAL(38,0)) AS delta
+             -CAST(`decoded`.event_params[3] AS DOUBLE) AS delta
       FROM decoded_transfers
       WHERE `decoded`.event_signature = 'Transfer'
         AND lower(`decoded`.event_params[1]) != '0x0000000000000000000000000000000000000000'
@@ -64,4 +64,4 @@ sinks:
       balance:
         from: delta
         fn: sum
-        type: numeric(38,0)
+        type: double precision
