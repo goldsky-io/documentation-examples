@@ -6,7 +6,9 @@ sources:
     type: dataset
     dataset_name: base_sepolia.raw_logs
     version: 1.0.0
-    start_at: earliest
+    # Start a few blocks before the ShareToken deploy at block 40726930
+    # to skip irrelevant chain history.
+    start_at: 40726900
 
 transforms:
   decoded_transfers:
