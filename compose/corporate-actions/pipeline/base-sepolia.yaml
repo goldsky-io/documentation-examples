@@ -1,10 +1,6 @@
 name: "corp-actions-balances-base-sepolia"
 resource_size: s
 
-# Index ERC-20 Transfer events of our ShareToken from raw_logs (the
-# erc20_transfers dataset's `amount` column is FixedSizeBinary which
-# DataFusion can't cast directly to a numeric type).
-
 sources:
   logs:
     type: dataset
@@ -13,21 +9,20 @@ sources:
     start_at: earliest
 
 transforms:
-  transfers:
+  decoded_transfers:
     type: sql
     primary_key: id
     sql: |
       SELECT id,
              block_number,
              lower(address) AS token,
-             -- topic[1] and topic[2] are 32-byte left-padded addresses
-             concat('0x', substr(topics[2], 27, 40)) AS sender,
-             concat('0x', substr(topics[3], 27, 40)) AS recipient,
-             -- data is the uint256 value as a 32-byte hex string
-             to_u256(data) AS amount
+             _gs_log_decode(
+               '[{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Transfer","type":"event"}]',
+               topics,
+               data
+             ) AS decoded
       FROM logs
       WHERE lower(address) = lower('0x2d134178F9efC772A93BB83632965E6b731e1E19')
-        AND topics[1] = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 
   signed_deltas:
     type: sql
@@ -37,18 +32,20 @@ transforms:
              block_number,
              token,
              'baseSepolia' AS chain,
-             recipient AS account,
-             CAST(amount AS DECIMAL(38,0)) AS delta
-      FROM transfers
+             lower(decoded.event_params[2]) AS account,
+             CAST(to_u256(decoded.event_params[3]) AS DECIMAL(38,0)) AS delta
+      FROM decoded_transfers
+      WHERE decoded.name = 'Transfer'
       UNION ALL
       SELECT CONCAT(id, '-debit') AS id,
              block_number,
              token,
              'baseSepolia' AS chain,
-             sender AS account,
-             -CAST(amount AS DECIMAL(38,0)) AS delta
-      FROM transfers
-      WHERE sender != '0x0000000000000000000000000000000000000000'
+             lower(decoded.event_params[1]) AS account,
+             -CAST(to_u256(decoded.event_params[3]) AS DECIMAL(38,0)) AS delta
+      FROM decoded_transfers
+      WHERE decoded.name = 'Transfer'
+        AND lower(decoded.event_params[1]) != '0x0000000000000000000000000000000000000000'
 
 sinks:
   balances:

@@ -9,19 +9,20 @@ sources:
     start_at: earliest
 
 transforms:
-  transfers:
+  decoded_transfers:
     type: sql
     primary_key: id
     sql: |
       SELECT id,
              block_number,
              lower(address) AS token,
-             concat('0x', substr(topics[2], 27, 40)) AS sender,
-             concat('0x', substr(topics[3], 27, 40)) AS recipient,
-             to_u256(data) AS amount
+             _gs_log_decode(
+               '[{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Transfer","type":"event"}]',
+               topics,
+               data
+             ) AS decoded
       FROM logs
       WHERE lower(address) = lower('0x81051f77ea167b631Dd7F40ac414A9F9344Fb162')
-        AND topics[1] = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
 
   signed_deltas:
     type: sql
@@ -31,18 +32,20 @@ transforms:
              block_number,
              token,
              'arbitrumSepolia' AS chain,
-             recipient AS account,
-             CAST(amount AS DECIMAL(38,0)) AS delta
-      FROM transfers
+             lower(decoded.event_params[2]) AS account,
+             CAST(to_u256(decoded.event_params[3]) AS DECIMAL(38,0)) AS delta
+      FROM decoded_transfers
+      WHERE decoded.name = 'Transfer'
       UNION ALL
       SELECT CONCAT(id, '-debit') AS id,
              block_number,
              token,
              'arbitrumSepolia' AS chain,
-             sender AS account,
-             -CAST(amount AS DECIMAL(38,0)) AS delta
-      FROM transfers
-      WHERE sender != '0x0000000000000000000000000000000000000000'
+             lower(decoded.event_params[1]) AS account,
+             -CAST(to_u256(decoded.event_params[3]) AS DECIMAL(38,0)) AS delta
+      FROM decoded_transfers
+      WHERE decoded.name = 'Transfer'
+        AND lower(decoded.event_params[1]) != '0x0000000000000000000000000000000000000000'
 
 sinks:
   balances:
