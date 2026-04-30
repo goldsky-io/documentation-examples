@@ -92,11 +92,7 @@ export function buildSnapshotPipeline(input: {
       transfers: {
         type: "dataset",
         dataset_name: `${CONFIG.chain}.erc20_transfers`,
-        // v1.0.0 (NOT v1.2.0): v1.0.0 stores address columns as
-        // FixedString (Utf8-compatible) while v1.2.0 emits them as
-        // FixedSizeBinary(32) which DataFusion can't auto-cast to Utf8 for
-        // CONCAT/lower(). v1.0.0 is the proven shape for in-pipeline SQL.
-        version: "1.0.0",
+        version: "1.2.0",
         start_at: "earliest",
         end_block: Number(input.recordBlock),
         filter: `lower(address) = '${tokenLower}'`,
@@ -106,17 +102,35 @@ export function buildSnapshotPipeline(input: {
       signed_deltas: {
         type: "sql",
         primary_key: "id",
+        // The SQL-transform layer sees these column types:
+        //   - id, sender, recipient: Utf8 (already-decoded '0x…' strings)
+        //   - amount: FixedSizeBinary(32) (raw uint256, big-endian)
+        //
+        // For amount we need a numeric DOUBLE for the postgres_aggregate sink.
+        // The conversion sequence:
+        //   amount (FixedSizeBinary(32))
+        //     → arrow_cast(_, 'Binary')        — DataFusion is strict, the
+        //                                        `_gs_byte_to_hex` UDF
+        //                                        signature is Exact([Binary])
+        //                                        and won't auto-coerce
+        //                                        FixedSizeBinary
+        //     → _gs_byte_to_hex(_)             — Binary → Utf8 hex (no '0x')
+        //     → CONCAT('0x', _)                — to_u256 needs the prefix to
+        //                                        parse hex (else it'd parse
+        //                                        decimal and silently corrupt)
+        //     → to_u256(_)                     — Utf8 → U256
+        //     → CAST(_ AS DOUBLE)              — U256 → Float64 for the sink
         sql:
           `SELECT CONCAT(id, '-credit') AS id,
                   block_number,
                   lower(recipient) AS account,
-                  CAST(amount AS DOUBLE) AS delta
+                  CAST(u256_to_string(to_u256(CONCAT('0x', _gs_byte_to_hex(arrow_cast(amount, 'Binary'))))) AS DOUBLE) AS delta
              FROM transfers
             UNION ALL
            SELECT CONCAT(id, '-debit') AS id,
                   block_number,
                   lower(sender) AS account,
-                  -CAST(amount AS DOUBLE) AS delta
+                  -CAST(u256_to_string(to_u256(CONCAT('0x', _gs_byte_to_hex(arrow_cast(amount, 'Binary'))))) AS DOUBLE) AS delta
              FROM transfers
             WHERE lower(sender) != '0x0000000000000000000000000000000000000000'`,
       },
@@ -192,41 +206,32 @@ export async function getPipelineState(
 ): Promise<TurboState> {
   try {
     const res = await ctx.fetch<StateResponse>(
-      `${API_BASE}/pipelines/${encodeURIComponent(name)}/state`,
+      `${API_BASE}/pipelines/${encodeURIComponent(name)}`,
       { method: "GET", headers: authHeaders(ctx.env) },
     );
 
-    // Streamling-agent returns `{success: false, error: "..."}` when the
-    // k8s deployment is missing — that's a hard failure (the pod never came
-    // up), not a transient state we should keep polling on.
-    if (res?.success === false) {
-      const errMsg = String(res?.error ?? "").toLowerCase();
-      if (/not found|missing|deployment/i.test(errMsg)) return "error";
-    }
-
     const raw = (res?.status ?? res?.state ?? "unknown").toString().toLowerCase();
-    if (
-      raw === "running" ||
-      raw === "starting" ||
-      raw === "paused" ||
-      raw === "stopped" ||
-      raw === "completed"
-    ) {
-      return raw;
+    // Job-mode pipelines on this Goldsky deployment transition to `paused`
+    // when they finish their `end_block` range (the docs say `completed` but
+    // the API surfaces `paused` in practice). Treat both as success.
+    if (raw === "completed" || raw === "paused" || raw === "stopped") {
+      return "completed";
     }
-    // Treat any failed/error variant as "error" so the cron marks the
-    // campaign failed immediately instead of polling indefinitely.
+    if (raw === "running" || raw === "starting" || raw === "deploying") {
+      return "running";
+    }
     if (raw === "error" || raw === "failed") return "error";
     return "unknown";
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // 404 = the pipeline doesn't exist in the project. Two real cases:
-    //   1. Turbo auto-cleaned a job-mode pipeline ~1h after it completed.
-    //   2. The pipeline was never successfully created, or got deleted before
-    //      we could observe its terminal state.
-    // Both surface as 404. The caller (driveSnapshot) is responsible for
-    // distinguishing — it checks aggTableExists + holder count before flipping.
-    if (/404|not found/i.test(msg)) return "completed";
+    // 404 used to be treated as `completed` here on the assumption that
+    // Turbo auto-cleaned the pipeline after it finished. That fired
+    // prematurely on transient API blips during snapshotting, marking
+    // campaigns failed and racing the cron's table-drop against the
+    // still-running pipeline (see `corp-actions-509e1c9730550e80`).
+    // Now we surface 404 as `unknown` and let the caller use the agg table's
+    // contents (not pipeline existence) as the success signal.
+    if (/404|not found/i.test(msg)) return "unknown";
     throw err;
   }
 }
