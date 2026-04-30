@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Corporate-Actions Distributor — Live</title>
+<style>
+  :root {
+    --ink: #0b0e14;
+    --ink-soft: #2a2f3a;
+    --paper: #faf8f3;
+    --paper-soft: #f3efe7;
+    --accent: #8a4d2b;
+    --accent-soft: #d8c9b6;
+    --rule: #c9c0b1;
+    --good: #2f6b3a;
+    --bad: #8b2f2f;
+    --code-bg: #f0ece2;
+    --hint: #6e6859;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 16px/1.55 "Charter", "Iowan Old Style", "Cambria", "Georgia", serif;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 36px 32px 80px; }
+  header { border-bottom: 1px solid var(--rule); padding-bottom: 22px; margin-bottom: 28px; display: flex; justify-content: space-between; align-items: end; gap: 24px; flex-wrap: wrap; }
+  .eyebrow { font: 11px/1 ui-sans-serif, -apple-system, "Inter", system-ui, sans-serif; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+  h1 { font-size: 28px; line-height: 1.15; margin: 0 0 6px; letter-spacing: -0.01em; }
+  p.sub { color: var(--ink-soft); margin: 0; }
+  .meta { font: 12.5px/1.5 ui-mono, "SF Mono", monospace; color: var(--hint); text-align: right; }
+  .meta a { color: var(--accent); text-decoration: none; }
+  .meta a:hover { text-decoration: underline; }
+
+  h2 {
+    font: 600 16px/1.25 ui-sans-serif, -apple-system, "Inter", system-ui, sans-serif;
+    margin: 32px 0 12px;
+    color: var(--ink);
+    letter-spacing: 0.02em;
+  }
+
+  /* Trigger card */
+  .trigger {
+    border: 1px solid var(--rule); border-radius: 6px;
+    padding: 18px 20px; background: var(--paper-soft);
+    display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; align-items: end;
+    font: 13.5px/1.4 ui-sans-serif, system-ui, sans-serif;
+  }
+  .trigger label { display: block; }
+  .trigger .lbl { font: 11px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: var(--hint); margin-bottom: 4px; }
+  .trigger input { width: 100%; padding: 8px 10px; border: 1px solid var(--rule); background: white; border-radius: 4px; font: 13px/1.4 ui-mono, "SF Mono", monospace; }
+  .trigger button {
+    padding: 8px 16px; border: 1px solid var(--accent); background: var(--accent); color: white;
+    border-radius: 4px; cursor: pointer; font: 600 13px/1.4 ui-sans-serif, system-ui, sans-serif;
+  }
+  .trigger button:hover { background: #6f3d22; }
+  .trigger button:disabled { opacity: 0.5; cursor: wait; }
+
+  /* Table */
+  table.campaigns {
+    width: 100%; border-collapse: collapse;
+    font: 13px/1.4 ui-sans-serif, system-ui, sans-serif;
+    margin-top: 8px;
+  }
+  table.campaigns th {
+    text-align: left; padding: 8px 10px;
+    border-bottom: 1px solid var(--ink);
+    font: 10.5px/1 ui-sans-serif, system-ui, sans-serif;
+    text-transform: uppercase; letter-spacing: 0.08em; color: var(--hint);
+  }
+  table.campaigns td { padding: 12px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  table.campaigns tr:hover td { background: var(--paper-soft); }
+  table.campaigns .id { font: 12px/1.4 ui-mono, "SF Mono", monospace; color: var(--ink); }
+  table.campaigns .meta-row { font: 11px/1.4 ui-mono, "SF Mono", monospace; color: var(--hint); margin-top: 4px; }
+
+  .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font: 11px/1.5 ui-sans-serif, system-ui, sans-serif;
+    background: var(--paper-soft); color: var(--ink-soft); border: 1px solid var(--rule);
+    text-transform: lowercase; letter-spacing: 0.02em;
+  }
+  .pill.snapshotting { background: #fff5e0; color: #7a5500; border-color: #e6c07a; }
+  .pill.paying { background: #e0eaff; color: #1f4090; border-color: #93b0e6; }
+  .pill.complete { background: #e8f1e3; color: var(--good); border-color: #b7d3aa; }
+  .pill.failed { background: #fbe6e6; color: var(--bad); border-color: #d8a0a0; }
+
+  /* Progress bar */
+  .progress {
+    display: inline-block; width: 120px; height: 8px; background: var(--paper-soft);
+    border-radius: 999px; overflow: hidden; vertical-align: middle; border: 1px solid var(--rule);
+  }
+  .progress > .bar { height: 100%; background: var(--accent); transition: width 0.3s ease; }
+  .progress.good > .bar { background: var(--good); }
+
+  .links { font: 11.5px/1.6 ui-sans-serif, system-ui, sans-serif; color: var(--hint); margin-top: 6px; }
+  .links a { color: var(--accent); text-decoration: none; margin-right: 12px; }
+  .links a:hover { text-decoration: underline; }
+
+  .empty { padding: 40px; text-align: center; color: var(--hint); font-style: italic; }
+
+  /* Banner / errors */
+  #banner { padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; font: 13px/1.4 ui-sans-serif, system-ui, sans-serif; display: none; }
+  #banner.error { background: #fbe6e6; color: var(--bad); border: 1px solid #d8a0a0; display: block; }
+  #banner.info  { background: #e8f1e3; color: var(--good); border: 1px solid #b7d3aa; display: block; }
+
+  .auth-bar { background: var(--paper-soft); border: 1px solid var(--rule); border-radius: 4px; padding: 10px 14px; font: 12px/1.4 ui-sans-serif, system-ui, sans-serif; margin-bottom: 18px; }
+  .auth-bar input { width: 360px; padding: 6px 10px; border: 1px solid var(--rule); background: white; border-radius: 3px; font: 12px/1.4 ui-mono, "SF Mono", monospace; margin-left: 8px; }
+  .auth-bar button { padding: 6px 12px; border: 1px solid var(--accent); background: white; color: var(--accent); border-radius: 3px; cursor: pointer; font: 12px/1.4 ui-sans-serif, system-ui, sans-serif; margin-left: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div>
+    <div class="eyebrow">Compose · Turbo · Live</div>
+    <h1>Corporate-Actions Distributor</h1>
+    <p class="sub">Trigger a distribution. Watch compose orchestrate Turbo, snapshot holders, and pay them on-chain.</p>
+  </div>
+  <div class="meta">
+    <div>Operator: <a id="operator-link" target="_blank">…</a></div>
+    <div>ShareToken: <a href="https://basescan.org/address/0x6320a7b21965430d783Eedda5743824f1B5Ce2Ed" target="_blank">EIS</a></div>
+    <div>Campaign contract: <a href="https://basescan.org/address/0x81051f77ea167b631Dd7F40ac414A9F9344Fb162#events" target="_blank">events</a></div>
+    <div>Compose app: <a href="https://app.goldsky.com/dashboard/compose" target="_blank">Goldsky console</a></div>
+  </div>
+</header>
+
+<div class="auth-bar">
+  Project API key
+  <input id="bearer" type="password" placeholder="cm…" autocomplete="off">
+  <button onclick="saveBearer()">Save</button>
+  <span id="bearer-status" style="margin-left: 8px; color: var(--hint);"></span>
+</div>
+
+<div id="banner"></div>
+
+<h2>Declare a new distribution</h2>
+<form class="trigger" onsubmit="declare(event)">
+  <label>
+    <span class="lbl">campaignId</span>
+    <input id="campaignId" readonly>
+  </label>
+  <label>
+    <span class="lbl">recordBlock <span style="text-transform: none; font-size: 10.5px;">(currentBlock − 32)</span></span>
+    <input id="recordBlock" type="number">
+  </label>
+  <label>
+    <span class="lbl">totalAmount (mUSDC base units)</span>
+    <input id="totalAmount" type="text" value="10000000000">
+  </label>
+  <button id="declare-btn" type="submit">Declare</button>
+</form>
+
+<h2>Campaigns</h2>
+<table class="campaigns" id="table">
+  <thead>
+    <tr>
+      <th>Campaign</th>
+      <th>Status</th>
+      <th>Snapshot</th>
+      <th>Distribution</th>
+      <th>Created</th>
+    </tr>
+  </thead>
+  <tbody id="rows">
+    <tr><td colspan="5" class="empty">Loading…</td></tr>
+  </tbody>
+</table>
+
+</div>
+
+<script>
+// ─── Constants ──────────────────────────────────────────────────────────
+const COMPOSE_BASE = "https://api.goldsky.com/api/admin/compose/v1/corporate-actions/tasks";
+const PIPELINES_BASE = "https://api.goldsky.com/api/v1/pipelines";
+const RPC = "https://mainnet.base.org";
+const CAMPAIGN_CONTRACT = "0x81051f77ea167b631Dd7F40ac414A9F9344Fb162";
+const SHARE_TOKEN_DEPLOY_BLOCK = 45363717;
+
+// ─── Auth ───────────────────────────────────────────────────────────────
+let BEARER = localStorage.getItem("ca_bearer") || "";
+function saveBearer() {
+  BEARER = document.getElementById("bearer").value.trim();
+  localStorage.setItem("ca_bearer", BEARER);
+  document.getElementById("bearer-status").textContent = BEARER ? "saved." : "cleared.";
+  refresh();
+}
+function authHeaders() {
+  return { Authorization: `Bearer ${BEARER}`, "Content-Type": "application/json" };
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────
+function hex(n) { return BigInt(n).toString(16); }
+function shortId(id) { return id.slice(0, 10) + "…" + id.slice(-6); }
+function fmt(n) { return Number(n).toLocaleString(); }
+function ago(ms) {
+  const d = (Date.now() - ms) / 1000;
+  if (d < 60) return Math.floor(d) + "s ago";
+  if (d < 3600) return Math.floor(d / 60) + "m ago";
+  if (d < 86400) return Math.floor(d / 3600) + "h ago";
+  return Math.floor(d / 86400) + "d ago";
+}
+function showBanner(text, kind = "info") {
+  const b = document.getElementById("banner");
+  b.textContent = text;
+  b.className = kind;
+  if (kind === "info") setTimeout(() => { b.className = ""; b.textContent = ""; }, 5000);
+}
+
+// ─── RPC: read currentBlock ─────────────────────────────────────────────
+async function rpc(method, params) {
+  const res = await fetch(RPC, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  const j = await res.json();
+  if (j.error) throw new Error(j.error.message);
+  return j.result;
+}
+
+async function getCurrentBlock() {
+  const result = await rpc("eth_blockNumber", []);
+  return parseInt(result, 16);
+}
+
+// ─── RPC: read on-chain campaign struct ─────────────────────────────────
+// campaigns(bytes32) returns (operator, payToken, shareToken, totalAmount,
+//                             escrowRemaining, recordBlock, declared, sealed)
+async function readCampaignStruct(onChainId) {
+  // selector = first 4 bytes of keccak256("campaigns(bytes32)")
+  // verified against `cast sig "campaigns(bytes32)"`
+  const id = onChainId.replace(/^0x/, "").padStart(64, "0");
+  const data = "0x9eca2f1e" + id;
+  const result = await rpc("eth_call", [{ to: CAMPAIGN_CONTRACT, data }, "latest"]);
+  if (!result || result === "0x") return null;
+  // 8 fields × 32 bytes each
+  const slice = (i) => result.slice(2 + i * 64, 2 + (i + 1) * 64);
+  return {
+    operator:        "0x" + slice(0).slice(24),
+    payToken:        "0x" + slice(1).slice(24),
+    shareToken:      "0x" + slice(2).slice(24),
+    totalAmount:     BigInt("0x" + slice(3)),
+    escrowRemaining: BigInt("0x" + slice(4)),
+    recordBlock:     BigInt("0x" + slice(5)),
+    declared:        slice(6).endsWith("1"),
+    sealed_:         slice(7).endsWith("1"),
+  };
+}
+
+// ─── Compose: list campaigns ────────────────────────────────────────────
+async function listCampaigns() {
+  const res = await fetch(`${COMPOSE_BASE}/list_campaigns`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: "{}",
+  });
+  if (!res.ok) throw new Error(`list_campaigns ${res.status}: ${await res.text()}`);
+  const j = await res.json();
+  return j.campaigns || [];
+}
+
+// ─── Compose: declare ───────────────────────────────────────────────────
+async function declare(event) {
+  event.preventDefault();
+  const btn = document.getElementById("declare-btn");
+  btn.disabled = true; btn.textContent = "Declaring…";
+  try {
+    const campaignId  = document.getElementById("campaignId").value;
+    const recordBlock = Number(document.getElementById("recordBlock").value);
+    const totalAmount = document.getElementById("totalAmount").value.trim();
+    const res = await fetch(`${COMPOSE_BASE}/declare_campaign`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ campaignId, recordBlock, totalAmount }),
+    });
+    if (!res.ok) throw new Error(`declare ${res.status}: ${await res.text()}`);
+    const j = await res.json();
+    showBanner(`Declared ${shortId(campaignId)} → ${j.declareTxHash.slice(0, 10)}…`, "info");
+    seedNewCampaignId();
+    refresh();
+  } catch (err) {
+    showBanner(err.message, "error");
+  } finally {
+    btn.disabled = false; btn.textContent = "Declare";
+  }
+}
+
+// ─── Goldsky pipeline state ─────────────────────────────────────────────
+async function pipelineState(name) {
+  try {
+    const res = await fetch(`${PIPELINES_BASE}/${encodeURIComponent(name)}/state`, {
+      headers: authHeaders(),
+    });
+    if (res.status === 404) return { state: "404" };
+    const j = await res.json();
+    if (j.success === false) {
+      // typically "deployments.apps not found" — pod is gone
+      return { state: "auto-cleaned" };
+    }
+    return { state: (j.status || j.state || "unknown").toLowerCase() };
+  } catch {
+    return { state: "unreachable" };
+  }
+}
+
+// ─── Status pill ────────────────────────────────────────────────────────
+function statusPill(c) {
+  const s = c.status || "unknown";
+  return `<span class="pill ${s}">${s}</span>`;
+}
+
+// ─── Render row ─────────────────────────────────────────────────────────
+function renderSnapshotCell(c, pipeState) {
+  if (c.status === "snapshotting") {
+    return `<div class="meta-row">${pipeState ? "pipeline " + pipeState : "polling…"}</div>
+            <div class="meta-row">target block ${fmt(c.recordBlock)}</div>`;
+  }
+  if (c.status === "paying" || c.status === "complete") {
+    return `<div class="meta-row">✓ snapshot at block ${fmt(c.recordBlock)}</div>
+            <div class="meta-row">snapshot took ~${
+              c.snapshotCompletedAt
+                ? Math.round((c.snapshotCompletedAt - c.createdAt) / 1000) + "s"
+                : "?"
+            }</div>`;
+  }
+  if (c.status === "failed") {
+    return `<div class="meta-row" style="color: var(--bad);">${c.failureReason || "failed"}</div>`;
+  }
+  return "—";
+}
+
+function renderDistributionCell(c, onChain) {
+  if (c.status === "snapshotting") return "—";
+
+  if (!onChain) return `<div class="meta-row">checking on-chain…</div>`;
+
+  const totalAmount     = onChain.totalAmount;
+  const escrowRemaining = onChain.escrowRemaining;
+  const distributed     = totalAmount - escrowRemaining;
+  const pct             = totalAmount > 0n ? Number(distributed * 100n / totalAmount) : 0;
+  const isDone          = escrowRemaining === 0n;
+
+  const totalUsdc       = (Number(totalAmount) / 1e6).toLocaleString();
+  const distributedUsdc = (Number(distributed) / 1e6).toLocaleString();
+
+  return `
+    <div class="progress ${isDone ? "good" : ""}"><div class="bar" style="width:${pct}%"></div></div>
+    <div class="meta-row">${distributedUsdc} / ${totalUsdc} mUSDC distributed</div>
+    ${isDone ? '<div class="meta-row" style="color: var(--good);">✓ all paid</div>' : ""}
+  `;
+}
+
+function renderLinks(c) {
+  const declareTx = c.declareTxHash ? `https://basescan.org/tx/${c.declareTxHash}` : null;
+  const pipeline  = c.pipelineName
+    ? `https://app.goldsky.com/dashboard/turbo/pipelines/${c.pipelineName}`
+    : null;
+  return `
+    <div class="links">
+      ${declareTx ? `<a href="${declareTx}" target="_blank">declare tx</a>` : ""}
+      ${pipeline ? `<a href="${pipeline}" target="_blank">pipeline</a>` : ""}
+      <a href="https://basescan.org/address/${CAMPAIGN_CONTRACT}#events" target="_blank">on-chain events</a>
+    </div>
+  `;
+}
+
+// ─── Render ─────────────────────────────────────────────────────────────
+async function refresh() {
+  if (!BEARER) {
+    document.getElementById("rows").innerHTML =
+      `<tr><td colspan="5" class="empty">Paste your project API key above to begin.</td></tr>`;
+    return;
+  }
+
+  let campaigns;
+  try {
+    campaigns = await listCampaigns();
+  } catch (err) {
+    showBanner(err.message, "error");
+    return;
+  }
+
+  if (campaigns.length === 0) {
+    document.getElementById("rows").innerHTML =
+      `<tr><td colspan="5" class="empty">No campaigns yet — declare one above.</td></tr>`;
+    return;
+  }
+
+  // Resolve in-flight extras (pipeline state + on-chain struct) in parallel.
+  const enriched = await Promise.all(campaigns.map(async (c) => {
+    const [pipeState, onChain] = await Promise.all([
+      c.pipelineName && (c.status === "snapshotting" || c.status === "paying")
+        ? pipelineState(c.pipelineName).then(r => r.state)
+        : Promise.resolve(null),
+      c.onChainId && (c.status !== "snapshotting")
+        ? readCampaignStruct(c.onChainId).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+    return { c, pipeState, onChain };
+  }));
+
+  document.getElementById("rows").innerHTML = enriched.map(({ c, pipeState, onChain }) => `
+    <tr>
+      <td>
+        <div class="id">${shortId(c.userId || c.rowId)}</div>
+        ${renderLinks(c)}
+      </td>
+      <td>${statusPill(c)}</td>
+      <td>${renderSnapshotCell(c, pipeState)}</td>
+      <td>${renderDistributionCell(c, onChain)}</td>
+      <td><div class="meta-row">${ago(c.createdAt)}</div></td>
+    </tr>
+  `).join("");
+}
+
+// ─── Seed form ──────────────────────────────────────────────────────────
+function seedNewCampaignId() {
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  document.getElementById("campaignId").value =
+    "0x" + Array.from(arr).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function seedRecordBlock() {
+  try {
+    const cur = await getCurrentBlock();
+    document.getElementById("recordBlock").value = cur - 32;
+  } catch (err) {
+    document.getElementById("recordBlock").placeholder = "RPC failed: " + err.message;
+  }
+}
+
+// ─── Boot ───────────────────────────────────────────────────────────────
+window.addEventListener("DOMContentLoaded", async () => {
+  if (BEARER) {
+    document.getElementById("bearer").value = BEARER;
+    document.getElementById("bearer-status").textContent = "loaded from localStorage.";
+  }
+  seedNewCampaignId();
+  await seedRecordBlock();
+
+  // Operator link: derive from the most recent campaign's on-chain struct
+  // once we have one (cheaper than maintaining a separate constant). The
+  // contract stores it per-campaign; we just display it.
+  document.getElementById("operator-link").href =
+    "https://basescan.org/address/0x22576074544e189856Aa000fc0E5CF00b2eFF3b9";
+  document.getElementById("operator-link").textContent = "0x2257…F3b9";
+
+  await refresh();
+  // Re-fetch recordBlock periodically so the form is current.
+  setInterval(seedRecordBlock, 30_000);
+  // Refresh table every 3s.
+  setInterval(refresh, 3_000);
+});
+</script>
+</body>
+</html>
