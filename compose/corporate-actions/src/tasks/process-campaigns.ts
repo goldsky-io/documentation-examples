@@ -7,7 +7,7 @@ import {
   MAX_POLLS_PER_TICK,
   STATE_POLL_INTERVAL_MS,
 } from "../lib/constants";
-import { aggTableExists, dropCampaignTables, getHolders } from "../lib/db";
+import { aggTableRowCount, dropCampaignTables, getHolders } from "../lib/db";
 import { proRata } from "../lib/math";
 import { deletePipeline, getPipelineState } from "../lib/turbo";
 import type { Campaign, Payout } from "../lib/types";
@@ -106,30 +106,40 @@ async function driveSnapshot(
       return;
     }
 
+    // The Postgres sink commits the table on its FIRST checkpoint — even
+    // an empty epoch creates the schema. So we have to count rows, not
+    // just check the table exists, or a brief `/state` 404 mid-scan can
+    // race the cron into transitioning to `paying` while the pipeline is
+    // still scanning ahead of the share token's deploy block.
+    //
     // Two paths to "snapshot ready":
-    //   1. Pipeline reports completed/paused (job-mode terminal states), AND
-    //      the per-campaign table exists. Defensive check guards against
-    //      a structural failure where Turbo says done but produced no table.
-    //   2. Pipeline 404s (auto-cleanup happens ~1h after success but can
-    //      also happen sooner) AND the per-campaign table HAS rows in it.
-    //      We use row count rather than mere existence because a 404 on a
-    //      pipeline that never wrote anything would otherwise silently
-    //      flip the campaign to paying.
-    const tableExists = await aggTableExists(context, aggTable);
+    //   1. Pipeline reports completed/paused/stopped AND the table has
+    //      ≥1 row.
+    //   2. Pipeline state is `unknown` (404 from the auto-cleanup path
+    //      that follows a successful job-mode run) AND the table has
+    //      ≥1 row.
+    //
+    // If state is terminal but the table is empty, that's a structural
+    // failure (or a token with no holders, which for a corp-action is
+    // also operationally a failure).
+    const rowCount = await aggTableRowCount(context, aggTable);
     const sawTerminalState = state === "completed";
-    const looksAutoCleaned = state === "unknown" && tableExists;
 
-    if (sawTerminalState && !tableExists) {
+    if (sawTerminalState && (rowCount === null || rowCount === 0)) {
       await markFailed(
         context,
         campaigns,
         campaign,
-        `pipeline completed but ${aggTable} not found`,
+        `pipeline completed but ${aggTable} has no rows ` +
+          `(token may have no transfers, or pipeline failed silently)`,
       );
       return;
     }
 
-    if (sawTerminalState || looksAutoCleaned) {
+    const haveRows = rowCount !== null && rowCount > 0;
+    const looksAutoCleaned = state === "unknown" && haveRows;
+
+    if ((sawTerminalState && haveRows) || looksAutoCleaned) {
       console.log(`[${campaign.userId}] snapshot completed → paying`);
       await campaigns.setById(campaign.rowId, {
         ...campaign,

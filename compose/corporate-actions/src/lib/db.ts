@@ -102,14 +102,22 @@ export async function getHolders(
 }
 
 /**
- * True if the agg table exists in Postgres. Used as a defensive check —
- * we only read it once Turbo says the job is `completed`.
+ * Number of Transfer rows in the per-campaign table, or `null` if the table
+ * doesn't exist yet.
+ *
+ * Why count rather than just check existence?
+ *   The Postgres sink creates the table on the very first checkpoint —
+ *   even an "empty epoch" with zero matching rows commits, which creates
+ *   the schema. So `aggTableExists` can return `true` while the pipeline
+ *   is still mid-scan and hasn't reached blocks where the share token's
+ *   Transfers live. Counting rows distinguishes "sink initialized" from
+ *   "sink has actually delivered data".
  */
-export async function aggTableExists(
+export async function aggTableRowCount(
   ctx: TaskContext,
   aggTable: string,
-): Promise<boolean> {
-  const rows = await neonQuery(
+): Promise<number | null> {
+  const exists = await neonQuery(
     ctx,
     `SELECT EXISTS (
        SELECT 1 FROM pg_tables
@@ -117,7 +125,14 @@ export async function aggTableExists(
      ) AS present`,
     [aggTable],
   );
-  return rows[0]?.present === true || rows[0]?.present === "t";
+  if (!(exists[0]?.present === true || exists[0]?.present === "t")) {
+    return null;
+  }
+  const rows = await neonQuery(
+    ctx,
+    `SELECT count(*)::text AS n FROM "${aggTable}"`,
+  );
+  return Number(rows[0]?.n ?? 0);
 }
 
 /**
