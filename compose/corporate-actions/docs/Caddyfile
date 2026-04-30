@@ -1,0 +1,10 @@
+:8080 {
+	# Health check.
+	respond /healthz "ok" 200
+
+	# Everything else: the dashboard.
+	# (Single-page demo; no need for routing.)
+	rewrite * /dashboard.html
+	root * /usr/share/caddy
+	file_server
+}
