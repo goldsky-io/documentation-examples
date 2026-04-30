@@ -1,0 +1,69 @@
+name: "corp-actions-balances-arb-sepolia"
+resource_size: s
+
+sources:
+  logs:
+    type: dataset
+    dataset_name: arbitrum_sepolia.raw_logs
+    version: 1.0.0
+    # Start a few blocks before the ShareToken deploy at block 263077841
+    # to skip irrelevant chain history.
+    start_at: 263077800
+
+transforms:
+  decoded_transfers:
+    type: sql
+    primary_key: id
+    sql: |
+      SELECT id,
+             block_number,
+             lower(address) AS token,
+             _gs_log_decode(
+               '[{"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Transfer","type":"event"}]',
+               topics,
+               `data`
+             ) AS `decoded`
+      FROM logs
+      WHERE lower(address) = lower('0x81051f77ea167b631Dd7F40ac414A9F9344Fb162')
+
+  signed_deltas:
+    type: sql
+    primary_key: id
+    sql: |
+      SELECT CONCAT(id, '-credit') AS id,
+             block_number,
+             token,
+             'arbitrumSepolia' AS chain,
+             lower(`decoded`.event_params[2]) AS account,
+             CAST(`decoded`.event_params[3] AS DOUBLE) AS delta
+      FROM decoded_transfers
+      WHERE `decoded`.event_signature = 'Transfer'
+      UNION ALL
+      SELECT CONCAT(id, '-debit') AS id,
+             block_number,
+             token,
+             'arbitrumSepolia' AS chain,
+             lower(`decoded`.event_params[1]) AS account,
+             -CAST(`decoded`.event_params[3] AS DOUBLE) AS delta
+      FROM decoded_transfers
+      WHERE `decoded`.event_signature = 'Transfer'
+        AND lower(`decoded`.event_params[1]) != '0x0000000000000000000000000000000000000000'
+
+sinks:
+  balances:
+    type: postgres_aggregate
+    from: signed_deltas
+    schema: public
+    landing_table: share_transfer_log
+    agg_table: share_balances
+    primary_key: id
+    secret_name: CORPORATE_ACTIONS
+    group_by:
+      account: { type: text }
+      token:   { type: text }
+      chain:   { type: text }
+    aggregate:
+      balance:
+        from: delta
+        fn: sum
+        type: double precision

@@ -1,0 +1,28 @@
+name: "corporate-actions"
+api_version: "stable"
+
+# POSTGRES_CONNECTION_STRING is auto-injected at deploy time by compose-cloud.
+# A Goldsky-project secret named CORPORATE_ACTIONS is created alongside it,
+# referencing the same Neon DB; the Turbo pipelines in pipeline/*.yaml use that
+# secret to write share_balances and share_transfer_log into the same DB.
+
+tasks:
+  - path: "./src/tasks/declare-campaign.ts"
+    name: "declare_campaign"
+    triggers:
+      - type: "http"
+        authentication: "auth_token"
+    retry_config:
+      max_attempts: 1
+      initial_interval_ms: 500
+      backoff_factor: 1
+
+  - path: "./src/tasks/process-campaigns.ts"
+    name: "process_campaigns"
+    triggers:
+      - type: "cron"
+        expression: "* * * * *" # every minute
+    retry_config:
+      max_attempts: 2
+      initial_interval_ms: 2000
+      backoff_factor: 2
