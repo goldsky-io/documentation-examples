@@ -251,22 +251,36 @@ async function maybeMarkComplete(
 ) {
   if (campaign.status === "complete") return;
 
-  if (payouts.length > 0) {
-    const wallet = await context.evm.wallet({
-      name: "corp-actions-operator",
-      sponsorGas: true,
-    });
-    const chain = context.evm.chains[CONFIG.chain];
-    for (const p of payouts) {
-      const ok = await wallet.readContract(
-        chain,
-        CONFIG.campaignContract,
-        "isPaid(bytes32,address)",
-        [campaign.onChainId, p.holder],
-      );
-      if (!ok) return; // not done; next tick will keep paying
-    }
-  }
+  // Source of truth for "is this campaign fully distributed" is the
+  // contract's `escrowRemaining`. A single read, atomic.
+  //
+  // The previous implementation looped N `isPaid()` reads instead — which
+  // looked correct but had a real failure mode: with sponsored gas + a
+  // cluster of pay() txs, individual RPC nodes can return a stale `false`
+  // for an isPaid that's actually true on chain. One stale read kept the
+  // campaign in `paying` forever and re-fired pay() (silently absorbed by
+  // the AlreadyPaid guard, but noisy in operator logs). escrowRemaining=0
+  // is a single signal that's already resolved by the contract's
+  // checks-effects-interactions on every pay().
+  const wallet = await context.evm.wallet({
+    name: "corp-actions-operator",
+    sponsorGas: true,
+  });
+  const chain = context.evm.chains[CONFIG.chain];
+  const c = await wallet.readContract<
+    readonly [
+      `0x${string}`, `0x${string}`, `0x${string}`,
+      bigint, bigint, bigint,
+      boolean, boolean,
+    ]
+  >(
+    chain,
+    CONFIG.campaignContract,
+    "campaigns(bytes32) view returns (address,address,address,uint256,uint256,uint256,bool,bool)",
+    [campaign.onChainId],
+  );
+  const escrowRemaining = c[4];
+  if (escrowRemaining > 0n) return; // not done; next tick will keep paying
 
   await terminalCleanup(context, campaign);
   await campaigns.setById(campaign.rowId, {

@@ -174,15 +174,27 @@ export async function getPipelineState(
   name: string,
 ): Promise<TurboState> {
   try {
+    // Use `/state` (proxied to streamling-agent) NOT `/pipelines/<name>` or
+    // `/status` — those return CACHED registry data that lags k8s by minutes
+    // (or forever for job-mode pipelines that were cleaned up). `/state`
+    // queries the actual k8s deployment, so it's the only reliable source
+    // for "did the pipeline finish".
     const res = await ctx.fetch<StateResponse>(
-      `${API_BASE}/pipelines/${encodeURIComponent(name)}`,
+      `${API_BASE}/pipelines/${encodeURIComponent(name)}/state`,
       { method: "GET", headers: authHeaders(ctx.env) },
     );
 
+    // streamling-agent returns `{success: false, error: "...not found"}`
+    // when the k8s deployment is gone — which for a job-mode pipeline means
+    // it completed and was cleaned up. The caller (driveSnapshot) treats
+    // this as "unknown" + uses the per-campaign table's row count as the
+    // actual success signal.
+    if (res?.success === false) {
+      const errMsg = String(res?.error ?? "").toLowerCase();
+      if (/not found|missing|deployments?\b/i.test(errMsg)) return "unknown";
+    }
+
     const raw = (res?.status ?? res?.state ?? "unknown").toString().toLowerCase();
-    // Job-mode pipelines on this Goldsky deployment transition to `paused`
-    // when they finish their `end_block` range (the docs say `completed` but
-    // the API surfaces `paused` in practice). Treat both as success.
     if (raw === "completed" || raw === "paused" || raw === "stopped") {
       return "completed";
     }
@@ -193,13 +205,9 @@ export async function getPipelineState(
     return "unknown";
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // 404 used to be treated as `completed` here on the assumption that
-    // Turbo auto-cleaned the pipeline after it finished. That fired
-    // prematurely on transient API blips during snapshotting, marking
-    // campaigns failed and racing the cron's table-drop against the
-    // still-running pipeline (see `corp-actions-509e1c9730550e80`).
-    // Now we surface 404 as `unknown` and let the caller use the agg table's
-    // contents (not pipeline existence) as the success signal.
+    // Direct 404 (pipeline registry entry has been deleted) — same as the
+    // "deployment not found" case above: treat as unknown, let the caller
+    // decide based on the table contents.
     if (/404|not found/i.test(msg)) return "unknown";
     throw err;
   }
