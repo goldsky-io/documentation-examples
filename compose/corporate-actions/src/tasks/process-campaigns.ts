@@ -4,7 +4,6 @@ import {
   aggTableName,
   CONCURRENCY,
   CONFIG,
-  landingTableName,
   MAX_POLLS_PER_TICK,
   STATE_POLL_INTERVAL_MS,
 } from "../lib/constants";
@@ -92,35 +91,10 @@ async function driveSnapshot(
   campaigns: Awaited<ReturnType<TaskContext["collection"]>>,
   campaign: Campaign,
 ) {
+  const aggTable = aggTableName(campaign.userId);
+
   for (let i = 0; i < MAX_POLLS_PER_TICK; i++) {
     const state = await getPipelineState(context, campaign.pipelineName);
-
-    if (state === "completed") {
-      // Defensive: confirm the agg table exists before flipping status. If
-      // it's missing, something's structurally off and we shouldn't silently
-      // pay against a non-existent snapshot.
-      const aggTable = aggTableName(campaign.userId);
-      const ok = await aggTableExists(context, aggTable);
-      if (!ok) {
-        await markFailed(
-          context,
-          campaigns,
-          campaign,
-          `pipeline completed but ${aggTable} not found`,
-        );
-        return;
-      }
-      console.log(`[${campaign.userId}] snapshot completed → paying`);
-      await campaigns.setById(campaign.rowId, {
-        ...campaign,
-        status: "paying",
-        snapshotCompletedAt: Date.now(),
-      });
-      // Drive the first paying tick now, no need to wait for next cron.
-      const fresh = await campaigns.getById(campaign.rowId);
-      if (fresh) await drivePayouts(context, campaigns, fresh);
-      return;
-    }
 
     if (state === "error") {
       await markFailed(
@@ -132,7 +106,42 @@ async function driveSnapshot(
       return;
     }
 
-    // running / starting / paused / unknown → keep waiting
+    // Two paths to "snapshot ready":
+    //   1. Pipeline reports completed/paused (job-mode terminal states), AND
+    //      the per-campaign table exists. Defensive check guards against
+    //      a structural failure where Turbo says done but produced no table.
+    //   2. Pipeline 404s (auto-cleanup happens ~1h after success but can
+    //      also happen sooner) AND the per-campaign table HAS rows in it.
+    //      We use row count rather than mere existence because a 404 on a
+    //      pipeline that never wrote anything would otherwise silently
+    //      flip the campaign to paying.
+    const tableExists = await aggTableExists(context, aggTable);
+    const sawTerminalState = state === "completed";
+    const looksAutoCleaned = state === "unknown" && tableExists;
+
+    if (sawTerminalState && !tableExists) {
+      await markFailed(
+        context,
+        campaigns,
+        campaign,
+        `pipeline completed but ${aggTable} not found`,
+      );
+      return;
+    }
+
+    if (sawTerminalState || looksAutoCleaned) {
+      console.log(`[${campaign.userId}] snapshot completed → paying`);
+      await campaigns.setById(campaign.rowId, {
+        ...campaign,
+        status: "paying",
+        snapshotCompletedAt: Date.now(),
+      });
+      const fresh = await campaigns.getById(campaign.rowId);
+      if (fresh) await drivePayouts(context, campaigns, fresh);
+      return;
+    }
+
+    // running / starting / unknown-without-rows → keep waiting
     if (i < MAX_POLLS_PER_TICK - 1) {
       await sleep(STATE_POLL_INTERVAL_MS);
     }
@@ -295,9 +304,8 @@ async function markFailed(
  */
 async function terminalCleanup(context: TaskContext, campaign: Campaign) {
   await deletePipeline(context, campaign.pipelineName).catch(() => {});
-  const aggTable = aggTableName(campaign.userId);
-  const landing = landingTableName(campaign.userId);
-  await dropCampaignTables(context, aggTable, landing).catch(() => {});
+  const transfers = aggTableName(campaign.userId);
+  await dropCampaignTables(context, transfers).catch(() => {});
 }
 
 function sleep(ms: number): Promise<void> {

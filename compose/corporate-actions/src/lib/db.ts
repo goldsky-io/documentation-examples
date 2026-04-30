@@ -61,30 +61,43 @@ export async function neonQuery(
 }
 
 /**
- * Read all holders for a campaign's snapshot from its dedicated agg table.
+ * Compute holder balances for a campaign's snapshot.
  *
- * Each campaign's pipeline writes to its own `share_balances_<id>` table,
- * so reading the snapshot is "all rows where balance > 0".
+ * Each campaign's pipeline writes raw Transfer rows to its own
+ * `share_balances_<id>` table (no in-pipeline aggregation — see the rant in
+ * `lib/turbo.ts` about FixedSizeBinary handling). The aggregate runs here
+ * as a Postgres SQL: every transfer credits the recipient and debits the
+ * sender (skipping the zero-address sender for mints), summed per account.
+ *
+ * Postgres handles binary→numeric coercion at write time — `amount` lands
+ * as `numeric(78,0)` which we can cast to text and parse as a JS bigint
+ * without precision loss.
  */
 export async function getHolders(
   ctx: TaskContext,
-  aggTable: string,
+  table: string,
 ): Promise<Holder[]> {
-  // aggTable is a constructed identifier from pipelineId() — alphanumeric +
+  // `table` is a constructed identifier from pipelineId() — alphanumeric +
   // underscore only — so direct interpolation is safe. (Postgres prepared
   // statements don't support parameterising table names anyway.)
   const rows = await neonQuery(
     ctx,
-    `SELECT account, balance::text AS balance
-       FROM "${aggTable}"
-       WHERE balance > 0
-       ORDER BY account ASC`,
+    `SELECT account, SUM(delta)::text AS balance
+       FROM (
+         SELECT lower(recipient) AS account, amount AS delta
+           FROM "${table}"
+         UNION ALL
+         SELECT lower(sender) AS account, -amount AS delta
+           FROM "${table}"
+          WHERE lower(sender) != '0x0000000000000000000000000000000000000000'
+       ) ledger
+      GROUP BY account
+     HAVING SUM(delta) > 0
+      ORDER BY account ASC`,
   );
-  // balance is DOUBLE PRECISION (DataFusion can't cast FixedSizeBinary→Decimal,
-  // so the pipeline stores it as DOUBLE and we accept ~16-digit precision).
   return rows.map((r) => ({
     address: String(r.account).toLowerCase() as Hex,
-    balance: BigInt(Math.round(Number(r.balance))),
+    balance: BigInt(String(r.balance)),
   }));
 }
 
@@ -108,17 +121,15 @@ export async function aggTableExists(
 }
 
 /**
- * Drop the per-campaign tables. Called on terminal cleanup so the user's
+ * Drop the per-campaign table. Called on terminal cleanup so the user's
  * Neon DB doesn't accumulate orphaned tables across many campaigns.
  *
  * MUST be called AFTER the pipeline has been DELETE-ed — Turbo's sink writer
- * holds a connection, and dropping while it's still active racing.
+ * holds a connection, and dropping while it's still active is racing.
  */
 export async function dropCampaignTables(
   ctx: TaskContext,
-  aggTable: string,
-  landingTable: string,
+  transfersTable: string,
 ): Promise<void> {
-  await neonQuery(ctx, `DROP TABLE IF EXISTS "${aggTable}"`);
-  await neonQuery(ctx, `DROP TABLE IF EXISTS "${landingTable}"`);
+  await neonQuery(ctx, `DROP TABLE IF EXISTS "${transfersTable}"`);
 }

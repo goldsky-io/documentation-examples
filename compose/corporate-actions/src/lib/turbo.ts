@@ -2,7 +2,6 @@ import type { TaskContext } from "compose";
 import {
   aggTableName,
   CONFIG,
-  landingTableName,
   pipelineName,
 } from "./constants";
 import type { Hex } from "./types";
@@ -81,8 +80,7 @@ export function buildSnapshotPipeline(input: {
   shareToken: Hex;
   recordBlock: bigint;
 }): Record<string, unknown> {
-  const aggTable = aggTableName(input.campaignId);
-  const landing = landingTableName(input.campaignId);
+  const transfersTable = aggTableName(input.campaignId);
   const tokenLower = input.shareToken.toLowerCase();
 
   return {
@@ -93,67 +91,38 @@ export function buildSnapshotPipeline(input: {
         type: "dataset",
         dataset_name: `${CONFIG.chain}.erc20_transfers`,
         version: "1.2.0",
+        // `start_at` MUST be 'earliest' for hybrid-source / job-mode
+        // semantics. Setting it to a block number makes the source
+        // non-hybrid and Turbo refuses to run with job:true. The address
+        // filter below should still trigger Fast Scan within the
+        // start_at:earliest path.
         start_at: "earliest",
         end_block: Number(input.recordBlock),
         filter: `lower(address) = '${tokenLower}'`,
       },
     },
-    transforms: {
-      signed_deltas: {
-        type: "sql",
-        primary_key: "id",
-        // The SQL-transform layer sees these column types:
-        //   - id, sender, recipient: Utf8 (already-decoded '0x…' strings)
-        //   - amount: FixedSizeBinary(32) (raw uint256, big-endian)
-        //
-        // For amount we need a numeric DOUBLE for the postgres_aggregate sink.
-        // The conversion sequence:
-        //   amount (FixedSizeBinary(32))
-        //     → arrow_cast(_, 'Binary')        — DataFusion is strict, the
-        //                                        `_gs_byte_to_hex` UDF
-        //                                        signature is Exact([Binary])
-        //                                        and won't auto-coerce
-        //                                        FixedSizeBinary
-        //     → _gs_byte_to_hex(_)             — Binary → Utf8 hex (no '0x')
-        //     → CONCAT('0x', _)                — to_u256 needs the prefix to
-        //                                        parse hex (else it'd parse
-        //                                        decimal and silently corrupt)
-        //     → to_u256(_)                     — Utf8 → U256
-        //     → CAST(_ AS DOUBLE)              — U256 → Float64 for the sink
-        sql:
-          `SELECT CONCAT(id, '-credit') AS id,
-                  block_number,
-                  lower(recipient) AS account,
-                  CAST(u256_to_string(to_u256(CONCAT('0x', _gs_byte_to_hex(arrow_cast(amount, 'Binary'))))) AS DOUBLE) AS delta
-             FROM transfers
-            UNION ALL
-           SELECT CONCAT(id, '-debit') AS id,
-                  block_number,
-                  lower(sender) AS account,
-                  -CAST(u256_to_string(to_u256(CONCAT('0x', _gs_byte_to_hex(arrow_cast(amount, 'Binary'))))) AS DOUBLE) AS delta
-             FROM transfers
-            WHERE lower(sender) != '0x0000000000000000000000000000000000000000'`,
-      },
-    },
+    // The v1 pipelines API requires a `transforms` object even when there's
+    // nothing to do — leave it empty.
+    transforms: {},
+    // Why no SQL transform?
+    //   We tried — extensively. `amount` arrives as `FixedSizeBinary(32)` at
+    //   the DataFusion layer and there is no in-pipeline conversion to a
+    //   numeric/decimal that the planner accepts. Every UDF route either
+    //   silently passes binary through (invalid Utf8 downstream),
+    //   misinterprets hex as decimal, or hits "Unsupported CAST from
+    //   FixedSizeBinary(32) to <T>". The Postgres sink, however, has its
+    //   own binary→numeric mapping. So we sink the raw Transfer rows and
+    //   compute balances via a SQL aggregate over Postgres at read time
+    //   (see `getHolders` in lib/db.ts). One more network round-trip per
+    //   campaign in exchange for not fighting DataFusion.
     sinks: {
-      balances: {
-        type: "postgres_aggregate",
-        from: "signed_deltas",
+      transfers_sink: {
+        type: "postgres",
+        from: "transfers",
         schema: "public",
-        landing_table: landing,
-        agg_table: aggTable,
+        table: transfersTable,
         primary_key: "id",
         secret_name: "CORPORATE_ACTIONS",
-        group_by: {
-          account: { type: "text" },
-        },
-        aggregate: {
-          balance: {
-            from: "delta",
-            fn: "sum",
-            type: "double precision",
-          },
-        },
       },
     },
   };
