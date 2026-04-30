@@ -105,10 +105,6 @@
   #banner { padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; font: 13px/1.4 ui-sans-serif, system-ui, sans-serif; display: none; }
   #banner.error { background: #fbe6e6; color: var(--bad); border: 1px solid #d8a0a0; display: block; }
   #banner.info  { background: #e8f1e3; color: var(--good); border: 1px solid #b7d3aa; display: block; }
-
-  .auth-bar { background: var(--paper-soft); border: 1px solid var(--rule); border-radius: 4px; padding: 10px 14px; font: 12px/1.4 ui-sans-serif, system-ui, sans-serif; margin-bottom: 18px; }
-  .auth-bar input { width: 360px; padding: 6px 10px; border: 1px solid var(--rule); background: white; border-radius: 3px; font: 12px/1.4 ui-mono, "SF Mono", monospace; margin-left: 8px; }
-  .auth-bar button { padding: 6px 12px; border: 1px solid var(--accent); background: white; color: var(--accent); border-radius: 3px; cursor: pointer; font: 12px/1.4 ui-sans-serif, system-ui, sans-serif; margin-left: 6px; }
 </style>
 </head>
 <body>
@@ -127,13 +123,6 @@
     <div>Compose app: <a href="https://app.goldsky.com/dashboard/compose" target="_blank">Goldsky console</a></div>
   </div>
 </header>
-
-<div class="auth-bar">
-  Project API key
-  <input id="bearer" type="password" placeholder="cm…" autocomplete="off">
-  <button onclick="saveBearer()">Save</button>
-  <span id="bearer-status" style="margin-left: 8px; color: var(--hint);"></span>
-</div>
 
 <div id="banner"></div>
 
@@ -181,13 +170,12 @@ const CAMPAIGN_CONTRACT = "0x81051f77ea167b631Dd7F40ac414A9F9344Fb162";
 const SHARE_TOKEN_DEPLOY_BLOCK = 45363717;
 
 // ─── Auth ───────────────────────────────────────────────────────────────
-let BEARER = localStorage.getItem("ca_bearer") || "";
-function saveBearer() {
-  BEARER = document.getElementById("bearer").value.trim();
-  localStorage.setItem("ca_bearer", BEARER);
-  document.getElementById("bearer-status").textContent = BEARER ? "saved." : "cleared.";
-  refresh();
-}
+// Hardcoded for the demo URL. This is Adam's Zone (Goldsky) project key —
+// rotate it in the Goldsky dashboard if this dashboard URL leaks. Until
+// then, anyone who hits the URL can declare campaigns (spending the
+// operator's mUSDC) and spawn pipelines (counted toward Adam's project
+// usage). For a Broadridge demo this trade-off is acceptable.
+const BEARER = "cmlvmcgu3c5kz01z07szaagyb";
 function authHeaders() {
   return { Authorization: `Bearer ${BEARER}`, "Content-Type": "application/json" };
 }
@@ -370,12 +358,6 @@ function renderLinks(c) {
 
 // ─── Render ─────────────────────────────────────────────────────────────
 async function refresh() {
-  if (!BEARER) {
-    document.getElementById("rows").innerHTML =
-      `<tr><td colspan="5" class="empty">Paste your project API key above to begin.</td></tr>`;
-    return;
-  }
-
   let campaigns;
   try {
     campaigns = await listCampaigns();
@@ -436,10 +418,6 @@ async function seedRecordBlock() {
 
 // ─── Boot ───────────────────────────────────────────────────────────────
 window.addEventListener("DOMContentLoaded", async () => {
-  if (BEARER) {
-    document.getElementById("bearer").value = BEARER;
-    document.getElementById("bearer-status").textContent = "loaded from localStorage.";
-  }
   seedNewCampaignId();
   await seedRecordBlock();
 
