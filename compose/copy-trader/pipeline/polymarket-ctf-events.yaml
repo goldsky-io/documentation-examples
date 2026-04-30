@@ -1,6 +1,6 @@
 name: polymarket-ctf-events
 resource_size: s
-description: "Index Polymarket CTF Exchange fills for watched wallets → webhook to Compose"
+description: "Index Polymarket V2 CTF Exchange fills for watched wallets → webhook to Compose"
 
 sources:
   poly_logs:
@@ -8,10 +8,11 @@ sources:
     dataset_name: matic.raw_logs
     version: 1.0.0
     start_at: latest
+    # V2 CTF Exchange + V2 NegRisk CTF Exchange (cutover 2026-04-28).
     filter: >-
       address IN (
-        '0x4bfb41d5b3570defd03c39a9a4d8de6bd8b8982e',
-        '0xc5d563a36ae78145c45a50134d48a1215220f80a'
+        '0xe111180000d2663c0091e4f400237545b87b996b',
+        '0xe2222d279d744050d28e00520010520000310f59'
       )
 
 transforms:
@@ -26,7 +27,7 @@ transforms:
         transaction_hash,
         to_timestamp(block_timestamp) AS block_timestamp,
         evm_log_decode(
-          '[{"anonymous":false,"inputs":[{"indexed":true,"name":"orderHash","type":"bytes32"},{"indexed":true,"name":"maker","type":"address"},{"indexed":true,"name":"taker","type":"address"},{"indexed":false,"name":"makerAssetId","type":"uint256"},{"indexed":false,"name":"takerAssetId","type":"uint256"},{"indexed":false,"name":"makerAmountFilled","type":"uint256"},{"indexed":false,"name":"takerAmountFilled","type":"uint256"},{"indexed":false,"name":"fee","type":"uint256"}],"name":"OrderFilled","type":"event"}]',
+          '[{"anonymous":false,"inputs":[{"indexed":true,"name":"orderHash","type":"bytes32"},{"indexed":true,"name":"maker","type":"address"},{"indexed":true,"name":"taker","type":"address"},{"indexed":false,"name":"side","type":"uint8"},{"indexed":false,"name":"tokenId","type":"uint256"},{"indexed":false,"name":"makerAmountFilled","type":"uint256"},{"indexed":false,"name":"takerAmountFilled","type":"uint256"},{"indexed":false,"name":"fee","type":"uint256"},{"indexed":false,"name":"builder","type":"bytes32"},{"indexed":false,"name":"metadata","type":"bytes32"}],"name":"OrderFilled","type":"event"}]',
           topics,
           `data`
         ) AS `decoded`
@@ -44,8 +45,8 @@ transforms:
         block_timestamp,
         LOWER(`decoded`.event_params[2]) AS maker,
         LOWER(`decoded`.event_params[3]) AS taker,
-        `decoded`.event_params[4] AS maker_asset_id,
-        `decoded`.event_params[5] AS taker_asset_id,
+        `decoded`.event_params[4] AS side,
+        `decoded`.event_params[5] AS token_id,
         CAST(`decoded`.event_params[6] AS DOUBLE) / 1e6 AS maker_amount,
         CAST(`decoded`.event_params[7] AS DOUBLE) / 1e6 AS taker_amount,
         CAST(`decoded`.event_params[8] AS DOUBLE) / 1e6 AS fee

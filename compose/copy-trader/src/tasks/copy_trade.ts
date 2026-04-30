@@ -1,13 +1,14 @@
 /**
  * copy_trade — HTTP-triggered by Turbo pipeline webhook
  *
- * Receives a decoded OrderFilled event row from the pipeline.
+ * Receives a decoded V2 OrderFilled event row from the pipeline.
  * Determines buy/sell side, looks up market via Gamma, places CLOB order.
  */
 import type { TaskContext } from "compose";
 import { privateKeyToAccount } from "viem/accounts";
 import { executeTrade } from "../lib/clob";
 import { lookupMarketByTokenId } from "../lib/gamma";
+import { CONTRACTS } from "../lib/types";
 import type { OrderFillRow, Position, Trade } from "../lib/types";
 
 export async function main(ctx: TaskContext, params?: Record<string, unknown>) {
@@ -39,9 +40,9 @@ export async function main(ctx: TaskContext, params?: Record<string, unknown>) {
   const positionsCollection = await ctx.collection<Position>("positions");
   const tradesCollection = await ctx.collection<Trade>("trades");
 
-  // Budget check: read USDC.e balance on-chain (source of truth). If we don't
-  // have enough for the $1 minimum notional, skip. This avoids the local
-  // budget counter drifting out of sync with the real wallet.
+  // Budget check: read pUSD balance on-chain (V2 collateral, source of truth).
+  // If we don't have enough for the $1 minimum notional, skip. This avoids the
+  // local budget counter drifting out of sync with the real wallet.
   if (side === "BUY") {
     const pk = ctx.env.PRIVATE_KEY as `0x${string}`;
     const address = privateKeyToAccount(
@@ -57,7 +58,7 @@ export async function main(ctx: TaskContext, params?: Record<string, unknown>) {
           method: "eth_call",
           params: [
             {
-              to: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+              to: CONTRACTS.pUSD,
               data: "0x70a08231000000000000000000000000" + address.slice(2).toLowerCase(),
             },
             "latest",
@@ -66,10 +67,10 @@ export async function main(ctx: TaskContext, params?: Record<string, unknown>) {
         }),
       }
     )) as { result?: string };
-    const usdcBalance = balResp?.result ? Number(BigInt(balResp.result)) / 1e6 : 0;
-    if (usdcBalance < 1.1) {
-      console.log(`[copy_trade] BALANCE_LOW: $${usdcBalance.toFixed(2)} (need >=$1.10)`);
-      return { status: "BALANCE_LOW", balance: usdcBalance };
+    const pusdBalance = balResp?.result ? Number(BigInt(balResp.result)) / 1e6 : 0;
+    if (pusdBalance < 1.1) {
+      console.log(`[copy_trade] BALANCE_LOW: ${pusdBalance.toFixed(2)} pUSD (need >=1.10). Run setup_approvals to wrap USDC.e → pUSD.`);
+      return { status: "BALANCE_LOW", balance: pusdBalance };
     }
   }
 
@@ -124,7 +125,6 @@ export async function main(ctx: TaskContext, params?: Record<string, unknown>) {
     whalePrice,
     market.tickSize,
     market.negRisk,
-    market.feeRateBps,
     sellSize
   );
 
@@ -197,17 +197,14 @@ export async function main(ctx: TaskContext, params?: Record<string, unknown>) {
 }
 
 /**
- * Parse an OrderFilled webhook payload to determine trade direction.
+ * Parse a V2 OrderFilled webhook payload to determine trade direction.
  *
- * CTF Exchange OrderFilled:
- *   maker gives makerAsset of makerAmountFilled
- *   taker gives takerAsset of takerAmountFilled
- *   asset_id "0" = USDC (collateral), anything else = CTF share token
+ * V2 OrderFilled emits the MAKER's side (0 = BUY, 1 = SELL) and a single
+ * `tokenId` (no more makerAssetId/takerAssetId pair). The whale we want to
+ * copy may be the maker or the taker — taker takes the opposite side.
  *
- * The side we care about (BUY vs SELL) is the action the WATCHED WALLET is taking.
- * The pipeline filters to trades where maker OR taker is a watched wallet.
- *
- * Price = USDC amount / shares amount (always in [0,1] for valid fills).
+ * Price = pUSD amount / shares amount. For a BUY-side maker, makerAmount is
+ * pUSD and takerAmount is shares; for a SELL-side maker it's reversed.
  */
 function parseFill(
   row: OrderFillRow,
@@ -216,30 +213,31 @@ function parseFill(
   const makerIsWhale = watchedWallets.has(row.maker.toLowerCase());
   const takerIsWhale = watchedWallets.has(row.taker.toLowerCase());
 
-  // Figure out which side is USDC and which is shares
-  const makerIsUsdc = row.maker_asset_id === "0";
-  const takerIsUsdc = row.taker_asset_id === "0";
+  // Maker's side as encoded in the event (uint8): "0" = BUY, "1" = SELL.
+  const makerSide: "BUY" | "SELL" = row.side === "0" ? "BUY" : "SELL";
+  const oppositeSide: "BUY" | "SELL" = makerSide === "BUY" ? "SELL" : "BUY";
 
-  if (!makerIsUsdc && !takerIsUsdc) {
-    // Share-for-share swap, shouldn't happen in normal flow
+  // Whichever side the whale is on, set their effective side.
+  let whaleSide: "BUY" | "SELL";
+  if (makerIsWhale) {
+    whaleSide = makerSide;
+  } else if (takerIsWhale) {
+    whaleSide = oppositeSide;
+  } else {
+    // Shouldn't happen — pipeline filters to fills involving a watched wallet.
     return { side: "BUY", tokenId: "", whalePrice: 0 };
   }
 
-  // Identify share token and its amount, plus the USDC amount
-  const shareTokenId = makerIsUsdc ? row.taker_asset_id : row.maker_asset_id;
-  const sharesAmount = makerIsUsdc ? row.taker_amount : row.maker_amount;
-  const usdcAmount = makerIsUsdc ? row.maker_amount : row.taker_amount;
+  // Compute price: pUSD per share. Layout depends on the maker's side.
+  //   makerSide = BUY:  makerAmount = pUSD,   takerAmount = shares
+  //   makerSide = SELL: makerAmount = shares, takerAmount = pUSD
+  const usdcAmount = makerSide === "BUY" ? row.maker_amount : row.taker_amount;
+  const sharesAmount = makerSide === "BUY" ? row.taker_amount : row.maker_amount;
   const price = sharesAmount > 0 ? usdcAmount / sharesAmount : 0;
 
-  // Whoever gives USDC is buying shares. Determine if watched wallet is the buyer.
-  const usdcGiver = makerIsUsdc ? "maker" : "taker";
-  const whaleIsUsdcGiver =
-    (usdcGiver === "maker" && makerIsWhale) ||
-    (usdcGiver === "taker" && takerIsWhale);
-
   return {
-    side: whaleIsUsdcGiver ? "BUY" : "SELL",
-    tokenId: shareTokenId,
+    side: whaleSide,
+    tokenId: row.token_id,
     whalePrice: price,
   };
 }
