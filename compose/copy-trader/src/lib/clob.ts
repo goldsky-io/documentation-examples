@@ -1,7 +1,7 @@
 /**
- * Minimal Polymarket CLOB client that uses ctx.fetch for all HTTP.
+ * Minimal Polymarket V2 CLOB client that uses ctx.fetch for all HTTP.
  *
- * The @polymarket/clob-client SDK uses axios, which fails under Compose's
+ * The @polymarket/clob-client-v2 SDK uses axios, which fails under Compose's
  * Deno runtime (no --allow-net on task binaries). We reuse the SDK's pure
  * signing utilities (no HTTP) and route every API call through ctx.fetch,
  * which bridges to the host process that has network permissions.
@@ -12,13 +12,20 @@
  */
 import type { TaskContext } from "compose";
 import { Wallet } from "@ethersproject/wallet";
-import { OrderBuilder } from "@polymarket/clob-client/dist/order-builder/builder.js";
-import { orderToJson } from "@polymarket/clob-client/dist/utilities.js";
-import { Side, OrderType, SignatureType } from "@polymarket/clob-client";
-import type { TickSize } from "@polymarket/clob-client";
-import { createL1Headers, createL2Headers } from "@polymarket/clob-client/dist/headers/index.js";
+import {
+  OrderBuilder,
+  Side,
+  OrderType,
+  SignatureTypeV2,
+  createL1Headers,
+  createL2Headers,
+  orderToJsonV2,
+  type TickSize,
+} from "@polymarket/clob-client-v2";
 
 const CHAIN_ID = 137;
+/** V2 order version. SDK supports both V1 and V2 markets during the migration. */
+const ORDER_VERSION = 2;
 
 type ApiCreds = { key: string; secret: string; passphrase: string };
 
@@ -81,7 +88,7 @@ export type TradeResult = {
 };
 
 /**
- * Build, sign, and submit a FAK (Fill-and-Kill) market order to the CLOB.
+ * Build, sign, and submit a FAK (Fill-and-Kill) market order to the V2 CLOB.
  * All HTTP goes through ctx.fetch to the host → proxy → CLOB.
  */
 export async function executeTrade(
@@ -94,7 +101,6 @@ export async function executeTrade(
   whalePrice: number,
   tickSize: string,
   negRisk: boolean,
-  feeRateBps: number,
   sellSize?: number
 ): Promise<TradeResult> {
   try {
@@ -117,8 +123,8 @@ export async function executeTrade(
       return { success: false, error: `size too small (${shares})` };
     }
 
-    // SDK's `amount` param for createMarketOrder:
-    //   BUY: USDC to spend (shares * price)
+    // SDK's `amount` param for buildMarketOrder:
+    //   BUY: pUSD to spend (shares * price)
     //   SELL: shares to sell
     const amount = side === "BUY" ? shares * price : shares;
 
@@ -126,7 +132,7 @@ export async function executeTrade(
     const builder = new OrderBuilder(
       wallet as any,
       CHAIN_ID,
-      SignatureType.EOA
+      SignatureTypeV2.EOA
     );
 
     console.log(
@@ -140,13 +146,13 @@ export async function executeTrade(
         price,
         amount,
         side: side === "BUY" ? Side.BUY : Side.SELL,
-        feeRateBps,
       } as any,
-      { tickSize: tickSize as TickSize, negRisk }
+      { tickSize: tickSize as TickSize, negRisk },
+      ORDER_VERSION
     );
 
     const creds = await getApiCreds(ctx, privateKey, host);
-    const body = orderToJson(signedOrder, creds.key, OrderType.FAK);
+    const body = orderToJsonV2(signedOrder as any, creds.key, OrderType.FAK);
     const bodyStr = JSON.stringify(body);
 
     const l2Headers = await createL2Headers(

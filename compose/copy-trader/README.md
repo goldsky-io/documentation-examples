@@ -2,16 +2,18 @@
 
 A [Compose](https://docs.goldsky.com/compose/introduction) + [Turbo](https://docs.goldsky.com/turbo/introduction) example that mirrors Polymarket trades from any set of wallets you choose. When a watched wallet buys or sells, the bot places the same side on the CLOB with a $1 notional.
 
+Updated for [Polymarket V2](https://docs.polymarket.com/v2-migration) (cutover 2026-04-28): new V2 Exchange contracts, pUSD collateral, `@polymarket/clob-client-v2`.
+
 ## How It Works
 
 ```
 Polygon on-chain
        │
-       └─ CTF Exchange + NegRisk Exchange: OrderFilled events
+       └─ V2 CTF Exchange + V2 NegRisk Exchange: OrderFilled events
             │
             ▼
   ┌──────────────────────┐
-  │  Turbo Pipeline      │  decode fills, filter to watched wallets
+  │  Turbo Pipeline      │  decode V2 fills, filter to watched wallets
   │  (polymarket-ctf-    │  → webhook per fill
   │   events)            │
   └──────────┬───────────┘
@@ -20,9 +22,9 @@ Polygon on-chain
   ┌──────────────────────┐
   │  Compose App         │
   ├──────────────────────┤
-  │  copy_trade (http)   │  sign + POST order to Polymarket CLOB
+  │  copy_trade (http)   │  sign + POST V2 order to Polymarket CLOB
   │  redeem (cron 5m)    │  redeem winning shares on-chain
-  │  setup_approvals     │  one-time USDC + CTF approvals
+  │  setup_approvals     │  one-time approvals + USDC.e → pUSD wrap
   └──────────────────────┘
 ```
 
@@ -74,11 +76,11 @@ goldsky turbo apply pipeline/polymarket-ctf-events.yaml
 
 ### 6. Fund the wallet
 
-Send USDC.e (`0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`) on Polygon to your EOA. Compose sponsors gas, so no MATIC is required.
+Send USDC.e (`0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`) on Polygon to your EOA. Compose sponsors gas, so no MATIC is required. `setup_approvals` will wrap the USDC.e into pUSD before trading.
 
-### 7. Grant approvals
+### 7. Grant approvals + wrap collateral
 
-One-time ERC-20 + ERC-1155 approvals to the CTF Exchange and NegRisk Exchange. Triggers four sponsored on-chain transactions:
+One-time setup that approves the Collateral Onramp and both V2 Exchanges, then wraps your USDC.e balance into pUSD. Triggers a handful of sponsored on-chain transactions:
 
 ```bash
 curl -X POST -H "Authorization: Bearer $COMPOSE_TOKEN" \
@@ -86,6 +88,8 @@ curl -X POST -H "Authorization: Bearer $COMPOSE_TOKEN" \
 ```
 
 The bot starts trading as soon as a watched wallet's next fill hits the pipeline.
+
+To top up later: send more USDC.e to the EOA, then call `setup_approvals` again. It's idempotent — re-runs just re-emit the (already-set) approvals and wrap whatever USDC.e the wallet currently holds.
 
 ## Project Structure
 
@@ -98,13 +102,13 @@ copy-trader/
 │   └── polymarket-ctf-events.yaml         # Turbo pipeline → webhook sink
 └── src/
     ├── lib/
-    │   ├── clob.ts                        # Polymarket CLOB client (ctx.fetch based)
+    │   ├── clob.ts                        # V2 CLOB client (ctx.fetch based)
     │   ├── gamma.ts                       # Market metadata lookups
     │   └── types.ts                       # Contract addresses + shared types
     └── tasks/
         ├── copy_trade.ts                  # HTTP: receive fill → mirror trade
         ├── redeem.ts                      # Cron: redeem winning shares
-        └── setup_approvals.ts             # HTTP: one-time approvals
+        └── setup_approvals.ts             # HTTP: approvals + USDC.e → pUSD wrap
 ```
 
 ## Compose Features Demonstrated
@@ -112,7 +116,7 @@ copy-trader/
 - **Turbo → Compose webhook** — a Turbo pipeline sinks decoded events to a Compose HTTP task
 - **Cron triggers** — `redeem` runs every 5 minutes
 - **`ctx.fetch`** — all outbound HTTP (Polymarket CLOB + Gamma + data API) goes through Compose's host-mediated fetch
-- **`ctx.evm.wallet` with sponsored gas** — on-chain calls (approvals, redemptions) use a Compose-sponsored wallet
+- **`ctx.evm.wallet` with sponsored gas** — on-chain calls (approvals, wrap, redemptions) use a Compose-sponsored wallet
 - **`ctx.collection`** — `positions` and `trades` collections for persistent state
 - **Secrets** — wallet private key stored via `goldsky compose secret set`
 
@@ -133,11 +137,24 @@ TRADE_AMOUNT_USD: "10"
 ## Notes
 
 - The bot signs directly as the EOA. No Polymarket proxy wallet, no UI onboarding needed — just fund the EOA address with USDC.e.
-- `copy_trade` reads on-chain USDC balance before every BUY and skips if it would breach the $1.10 minimum. Local balance tracking isn't used — the chain is the source of truth.
-- `setup_approvals` is idempotent. Re-run it any time (e.g. after rotating keys) and it just re-emits the same `approve` / `setApprovalForAll` transactions.
+- `copy_trade` reads on-chain pUSD balance before every BUY and skips if it would breach the $1.10 minimum. Local balance tracking isn't used — the chain is the source of truth.
+- `setup_approvals` is idempotent. Re-run it after every USDC.e top-up to wrap fresh collateral; the approvals are max-allowance so re-approving is a cheap no-op.
+- `redeem` only handles standard (non-NegRisk) markets. NegRisk redemption goes through the NegRiskAdapter contract — out of scope for this example.
+
+## V2 contracts on Polygon
+
+| Contract | Address |
+|----------|---------|
+| CTF Exchange V2 | `0xE111180000d2663C0091e4f400237545B87B996B` |
+| NegRisk Exchange V2 | `0xe2222d279d744050d28e00520010520000310F59` |
+| Conditional Tokens (unchanged) | `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045` |
+| Collateral Onramp | `0x93070a847efEf7F70739046A929D47a521F5B8ee` |
+| pUSD | `0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB` |
+| USDC.e | `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174` |
 
 ## Resources
 
 - [Compose Documentation](https://docs.goldsky.com/compose/introduction)
 - [Turbo Documentation](https://docs.goldsky.com/turbo/introduction)
+- [Polymarket V2 migration](https://docs.polymarket.com/v2-migration)
 - [Polymarket CLOB API](https://docs.polymarket.com/)

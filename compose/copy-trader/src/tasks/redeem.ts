@@ -5,6 +5,14 @@
  * calls redeemPositions() on-chain for each. Polymarket marks a position
  * `redeemable: true` when its condition has resolved on-chain.
  *
+ * V2 markets are collateralized in pUSD, so redemption is denominated in
+ * pUSD. Pre-V2 (USDC.e collateralized) positions need a different collateral
+ * arg — see note below — but new positions opened by this bot are all V2.
+ *
+ * NegRisk markets redeem via the NegRiskAdapter (different ABI), not the
+ * ConditionalTokens contract. We skip them here and log a TODO; the basic
+ * (non-NegRisk) path is what the example demonstrates.
+ *
  * This intentionally doesn't use the local `positions` collection — the data
  * API is the source of truth and already knows the conditionId + outcomeIndex
  * for every share we hold, including trades that happened before this task
@@ -25,6 +33,7 @@ type DataApiPosition = {
   size: number;
   currentValue: number;
   redeemable: boolean;
+  negRisk?: boolean;
   // Multi-outcome markets have outcomeCount > 2; binary markets have 2.
   // For a binary market, indexSets are: outcome 0 → 1, outcome 1 → 2.
 };
@@ -72,6 +81,15 @@ export async function main(ctx: TaskContext) {
     if (seenConditions.has(pos.conditionId)) continue;
     seenConditions.add(pos.conditionId);
 
+    // NegRisk markets settle via NegRiskAdapter, not ConditionalTokens —
+    // out of scope for this example.
+    if (pos.negRisk) {
+      console.log(
+        `[redeem] SKIP NegRisk ${pos.conditionId.slice(0, 12)}... (${pos.title.slice(0, 40)}) — needs NegRiskAdapter.redeemPositions`
+      );
+      continue;
+    }
+
     // Binary market: indexSet 1 = outcome 0 (YES), indexSet 2 = outcome 1 (NO).
     // Passing both [1, 2] redeems whatever we hold in one call.
     const indexSets = [1, 2];
@@ -84,7 +102,7 @@ export async function main(ctx: TaskContext) {
         ctx.evm.chains.polygon,
         CONTRACTS.conditionalTokens as `0x${string}`,
         CONDITIONAL_TOKENS_ABI,
-        [CONTRACTS.usdc, parentCollectionId, pos.conditionId, indexSets]
+        [CONTRACTS.pUSD, parentCollectionId, pos.conditionId, indexSets]
       );
       console.log(`[redeem] redeemed: ${tx.hash}`);
       results.push({ condition: pos.conditionId, tx: tx.hash });
