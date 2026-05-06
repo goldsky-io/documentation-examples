@@ -27,7 +27,21 @@ function getConnectionString(): string {
   if (!url) {
     throw new Error("POSTGRES_CONNECTION_STRING not set");
   }
-  return url;
+  // Tack on params that bust Neon pool stickiness:
+  //   - target_session_attrs=read-write → routes to primary, not a replica
+  //   - application_name=<unique>      → defeats pool slot stickiness so each
+  //                                      HTTP query gets a freshly-spawned
+  //                                      backend connection (which sees
+  //                                      committed writes, not a stale snapshot)
+  // We've measured ~145s read lag without these; with them the read should
+  // see writes within seconds.
+  const u = new URL(url);
+  u.searchParams.set("target_session_attrs", "read-write");
+  u.searchParams.set(
+    "application_name",
+    `corp-actions-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  );
+  return u.toString();
 }
 
 /** Derive Neon's HTTP `/sql` URL from a Postgres connection string. */
