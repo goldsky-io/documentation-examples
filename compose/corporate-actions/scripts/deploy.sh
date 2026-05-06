@@ -29,11 +29,11 @@ fi
 
 # Build constructor args for ShareToken from seed-holders.json.
 # Forge expects unquoted-element array form: [0x...,0x...,...] for address[]
-# and [1000,1000,...] for uint256[]. jq's `join` keeps it tidy.
-HOLDERS_ARG="$(jq -r '"[" + (.addresses | join(",")) + "]"' "$ROOT_DIR/$HOLDERS_FILE")"
-AMOUNT="$(jq -r '.amountPerHolder' "$ROOT_DIR/$HOLDERS_FILE")"
-COUNT="$(jq -r '.addresses | length' "$ROOT_DIR/$HOLDERS_FILE")"
-AMOUNTS_ARG="[$(yes "$AMOUNT" | head -n "$COUNT" | paste -sd, -)]"
+# and [1000,1000,...] for uint256[].
+HOLDERS_ARG="$(jq -r '"[" + ([.holders[].address] | join(",")) + "]"' "$ROOT_DIR/$HOLDERS_FILE")"
+AMOUNTS_ARG="$(jq -r '"[" + ([.holders[].amount] | join(",")) + "]"' "$ROOT_DIR/$HOLDERS_FILE")"
+COUNT="$(jq -r '.holders | length' "$ROOT_DIR/$HOLDERS_FILE")"
+echo "ShareToken pre-mint: $COUNT holders"
 
 echo "Deploying to $RPC_URL ..."
 echo
