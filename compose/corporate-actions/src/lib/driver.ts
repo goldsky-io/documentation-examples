@@ -134,8 +134,10 @@ async function drivePayouts(
   campaigns: Awaited<ReturnType<TaskContext["collection"]>>,
   campaign: Campaign,
 ) {
+  console.log(`[${campaign.userId}] drivePayouts: start`);
   const aggTable = aggTableName(campaign.userId);
   const holders = await getHolders(context, aggTable);
+  console.log(`[${campaign.userId}] drivePayouts: holders=${holders.length}`);
   if (holders.length === 0) {
     // The snapshot completed (the agg table exists) but contains zero rows.
     // For a corporate-action distribution this is always a failure — either
@@ -174,6 +176,9 @@ async function drivePayouts(
     if (!isAlreadyPaid) unpaid.push(p);
   }
 
+  console.log(
+    `[${campaign.userId}] drivePayouts: unpaid=${unpaid.length}/${payouts.length}`,
+  );
   if (unpaid.length === 0) {
     await maybeMarkComplete(context, campaigns, campaign, payouts);
     return;
@@ -184,9 +189,11 @@ async function drivePayouts(
   // safe even when we're optimistic about parallel state.
   for (let i = 0; i < unpaid.length; i += CONCURRENCY) {
     const batch = unpaid.slice(i, i + CONCURRENCY);
+    console.log(`[${campaign.userId}] drivePayouts: sending batch ${batch.length}`);
     await Promise.allSettled(batch.map((p) => payOne(wallet, chain, campaign, p)));
   }
 
+  console.log(`[${campaign.userId}] drivePayouts: batches done, checking escrow`);
   // Re-read on-chain state to decide if we're done.
   await maybeMarkComplete(context, campaigns, campaign, payouts);
 }
@@ -257,6 +264,9 @@ async function maybeMarkComplete(
     [campaign.onChainId],
   );
   const escrowRemaining = c[4];
+  console.log(
+    `[${campaign.userId}] maybeMarkComplete: escrowRemaining=${escrowRemaining}`,
+  );
   if (escrowRemaining > 0n) return; // not done; caller can re-drive to keep paying
 
   await terminalCleanup(context, campaign);
