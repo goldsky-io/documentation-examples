@@ -67,9 +67,12 @@ interface StateResponse {
  *   `Unsupported CAST from FixedSizeBinary(32) to Float64`.)
  *
  * Pieces:
- *   - source: `base.erc20_transfers` filtered to the share token (Fast Scan
- *     triggers on a source-level `filter` over a hybrid dataset with
- *     `start_at: earliest`), bounded by `end_block: recordBlock`
+ *   - source: `base.erc20_transfers` with `start_at: earliest` (required for
+ *     hybrid-source / job-mode), narrowed by a filter that bounds both ends
+ *     of the scan: `lower(address) = <token> AND block_number BETWEEN
+ *     <deployBlock> AND <recordBlock>`. Per Jeff: a filter-level lower+upper
+ *     block range is dramatically faster than a source-level `end_block`
+ *     because the planner can prune partitions/files before scanning.
  *   - transform: split each Transfer into `+amount` at `recipient` and
  *     `-amount` at `sender` (skip zero-address sender for mints)
  *   - sink: postgres_aggregate sums per-account deltas into a per-campaign
@@ -82,6 +85,8 @@ export function buildSnapshotPipeline(input: {
 }): Record<string, unknown> {
   const transfersTable = aggTableName(input.campaignId);
   const tokenLower = input.shareToken.toLowerCase();
+  const startBlock = CONFIG.shareTokenDeployBlock;
+  const endBlock = Number(input.recordBlock);
 
   return {
     resource_size: "s",
@@ -93,12 +98,12 @@ export function buildSnapshotPipeline(input: {
         version: "1.2.0",
         // `start_at` MUST be 'earliest' for hybrid-source / job-mode
         // semantics. Setting it to a block number makes the source
-        // non-hybrid and Turbo refuses to run with job:true. The address
-        // filter below should still trigger Fast Scan within the
-        // start_at:earliest path.
+        // non-hybrid and Turbo refuses to run with job:true. The
+        // block-range filter below carries the actual scan bounds.
         start_at: "earliest",
-        end_block: Number(input.recordBlock),
-        filter: `lower(address) = '${tokenLower}'`,
+        filter:
+          `lower(address) = '${tokenLower}' ` +
+          `AND block_number BETWEEN ${startBlock} AND ${endBlock}`,
       },
     },
     // The v1 pipelines API requires a `transforms` object even when there's
@@ -146,7 +151,10 @@ export async function createSnapshotPipeline(
     definition,
   };
 
-  console.log(`[turbo] POST /pipelines: name=${name}, end_block=${input.recordBlock}`);
+  console.log(
+    `[turbo] POST /pipelines: name=${name}, ` +
+      `block_range=[${CONFIG.shareTokenDeployBlock}, ${input.recordBlock}]`,
+  );
   try {
     const res = await ctx.fetch(`${API_BASE}/pipelines`, {
       method: "POST",

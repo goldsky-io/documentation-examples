@@ -12,12 +12,13 @@ export const CONFIG = {
   shareToken:       "0x6320a7b21965430d783Eedda5743824f1B5Ce2Ed" as Hex,
   payToken:         "0x02D9Df62B7AED15739D638B92BAcEA2ce4Cb3d70" as Hex,  // MockUSDC
   campaignContract: "0x81051f77ea167b631Dd7F40ac414A9F9344Fb162" as Hex,
-  // Block at which `shareToken` was deployed. The pipeline's `start_at` is
-  // anchored here so the backfill skips the millions of pre-deploy blocks
-  // that can't possibly contain Transfer events for this token. Without
-  // this, snapshot pipelines on Base take 5-10 minutes; with it they
-  // complete in seconds (Fast Scan still applies on top via the address
-  // filter).
+  // Block at which `shareToken` was deployed. Job-mode forces
+  // `start_at: earliest`, so we can't anchor the source there directly;
+  // instead this is used as the lower bound in the snapshot pipeline's
+  // SQL filter (`block_number BETWEEN <deploy> AND <record>`), which lets
+  // the planner prune all pre-deploy blocks before scanning. Per Jeff: a
+  // filter-level block range is meaningfully faster than a source-level
+  // `end_block` alone.
   shareTokenDeployBlock: 45363717,
 };
 
