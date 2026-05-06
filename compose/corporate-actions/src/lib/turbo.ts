@@ -203,7 +203,13 @@ export async function getPipelineState(
     }
 
     const raw = (res?.status ?? res?.state ?? "unknown").toString().toLowerCase();
-    if (raw === "completed" || raw === "paused" || raw === "stopped") {
+    console.log(`[turbo] /state(${name}) raw=${raw}`);
+    if (
+      raw === "completed" || raw === "complete" ||
+      raw === "succeeded" || raw === "success" ||
+      raw === "finished" ||
+      raw === "paused" || raw === "stopped"
+    ) {
       return "completed";
     }
     if (raw === "running" || raw === "starting" || raw === "deploying") {

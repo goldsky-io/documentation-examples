@@ -86,6 +86,9 @@ async function driveSnapshot(
     // failure (or a token with no holders, which for a corp-action is
     // also operationally a failure).
     const rowCount = await aggTableRowCount(context, aggTable);
+    console.log(
+      `[${campaign.userId}] poll i=${i} state=${state} rowCount=${rowCount}`,
+    );
     const sawTerminalState = state === "completed";
 
     if (sawTerminalState && (rowCount === null || rowCount === 0)) {
