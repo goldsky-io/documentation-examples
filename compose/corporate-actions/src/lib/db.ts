@@ -117,29 +117,44 @@ export async function aggTableRowCount(
   ctx: TaskContext,
   aggTable: string,
 ): Promise<number | null> {
-  // Direct count attempt; on missing-table errors we return null (so the
-  // caller keeps waiting). Anything else surfaces in logs so we can see
-  // why the postgres read isn't seeing pipeline-written rows.
+  // Beefy diagnostic version: schema-qualified count, planner-stat count,
+  // physical table size, schema list, and connection identity. Designed
+  // to triangulate a Neon read-after-write visibility lag we've been
+  // seeing where count(*) returns 0 for ~2 minutes after the pipeline
+  // commits ~10 rows.
   try {
-    const rows = await neonQuery(
+    const diag = await neonQuery(
       ctx,
-      `SELECT count(*)::text AS n,
-              current_database() AS db,
-              inet_server_addr()::text AS host
-         FROM "${aggTable}"`,
+      `SELECT
+         (SELECT count(*)::text FROM public."${aggTable}") AS n_public,
+         (SELECT count(*)::text FROM "${aggTable}") AS n_unqual,
+         (SELECT reltuples::text FROM pg_class
+            WHERE relname = '${aggTable}' AND relnamespace = 'public'::regnamespace) AS n_planner,
+         (SELECT pg_table_size('public."${aggTable}"')::text) AS bytes,
+         (SELECT string_agg(schemaname, ',' ORDER BY schemaname)
+            FROM pg_tables WHERE tablename = '${aggTable}') AS schemas,
+         current_database() AS db,
+         current_schema() AS schema,
+         current_user AS user,
+         current_setting('search_path') AS search_path,
+         inet_server_addr()::text AS host`,
     );
-    const n = Number(rows[0]?.n ?? 0);
-    const db = rows[0]?.db;
-    const host = rows[0]?.host;
-    console.log(`[db] count("${aggTable}") = ${n} (db=${db} host=${host})`);
+    const r = diag[0] ?? {};
+    const n = Number(r.n_public ?? 0);
+    console.log(
+      `[db] "${aggTable}" n_public=${r.n_public} n_unqual=${r.n_unqual} ` +
+        `n_planner=${r.n_planner} bytes=${r.bytes} schemas=${r.schemas} ` +
+        `db=${r.db} schema=${r.schema} user=${r.user} ` +
+        `search_path=${r.search_path} host=${r.host}`,
+    );
     return n;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (/does not exist|undefined.relation|relation .* does not exist/i.test(msg)) {
-      console.log(`[db] count("${aggTable}") → table missing`);
+      console.log(`[db] "${aggTable}" → table missing`);
       return null;
     }
-    console.log(`[db] count("${aggTable}") threw: ${msg}`);
+    console.log(`[db] "${aggTable}" threw: ${msg}`);
     throw err;
   }
 }
