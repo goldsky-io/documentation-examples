@@ -24,10 +24,11 @@ export const CONFIG = {
 
 /**
  * Concurrent pay() calls. Bounded by the gas-sponsored bundler's throughput
- * (~1-5 userOps/sec/sender). 10 fits the demo's typical 10-holder snapshot
- * in a single batch.
+ * (~1-5 userOps/sec/sender). Set high enough that the demo's full
+ * 25-holder snapshot fires in a single batch — visually punchier than
+ * watching multiple sequential rounds tick across the dashboard.
  */
-export const CONCURRENCY = 10;
+export const CONCURRENCY = 25;
 
 /**
  * State-poll cadence while waiting for the Turbo job-mode snapshot to
