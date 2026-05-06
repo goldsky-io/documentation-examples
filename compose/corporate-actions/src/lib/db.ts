@@ -117,22 +117,26 @@ export async function aggTableRowCount(
   ctx: TaskContext,
   aggTable: string,
 ): Promise<number | null> {
-  const exists = await neonQuery(
-    ctx,
-    `SELECT EXISTS (
-       SELECT 1 FROM pg_tables
-       WHERE schemaname = 'public' AND tablename = $1
-     ) AS present`,
-    [aggTable],
-  );
-  if (!(exists[0]?.present === true || exists[0]?.present === "t")) {
-    return null;
+  // Direct count attempt; on missing-table errors we return null (so the
+  // caller keeps waiting). Anything else surfaces in logs so we can see
+  // why the postgres read isn't seeing pipeline-written rows.
+  try {
+    const rows = await neonQuery(
+      ctx,
+      `SELECT count(*)::text AS n FROM "${aggTable}"`,
+    );
+    const n = Number(rows[0]?.n ?? 0);
+    console.log(`[db] count("${aggTable}") = ${n}`);
+    return n;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/does not exist|undefined.relation|relation .* does not exist/i.test(msg)) {
+      console.log(`[db] count("${aggTable}") → table missing`);
+      return null;
+    }
+    console.log(`[db] count("${aggTable}") threw: ${msg}`);
+    throw err;
   }
-  const rows = await neonQuery(
-    ctx,
-    `SELECT count(*)::text AS n FROM "${aggTable}"`,
-  );
-  return Number(rows[0]?.n ?? 0);
 }
 
 /**
