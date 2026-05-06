@@ -9,7 +9,7 @@ import type { Hex } from "./types";
  */
 export const CONFIG = {
   chain: "base" as const,            // matches evm.chains[chain] AND turbo dataset prefix
-  shareToken:       "0x6320a7b21965430d783Eedda5743824f1B5Ce2Ed" as Hex,
+  shareToken:       "0xE05Ceb3E269029E3bab46E35515e8987060D1027" as Hex,
   payToken:         "0x02D9Df62B7AED15739D638B92BAcEA2ce4Cb3d70" as Hex,  // MockUSDC
   campaignContract: "0x81051f77ea167b631Dd7F40ac414A9F9344Fb162" as Hex,
   // Block at which `shareToken` was deployed. Job-mode forces
@@ -19,7 +19,7 @@ export const CONFIG = {
   // the planner prune all pre-deploy blocks before scanning. Per Jeff: a
   // filter-level block range is meaningfully faster than a source-level
   // `end_block` alone.
-  shareTokenDeployBlock: 45363717,
+  shareTokenDeployBlock: 45654954,
 };
 
 /**
