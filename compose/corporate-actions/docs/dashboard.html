@@ -502,6 +502,10 @@ async function declare(event) {
     recordBlock: String(recordBlock),
     createdAt: Date.now(),
   });
+  // Synchronous re-render against last-known cache — no waiting on
+  // listCampaigns() / on-chain fetches before the new row paints.
+  renderRows();
+  // Kick off a fresh fetch in the background.
   refresh();
 
   try {
@@ -644,6 +648,50 @@ function renderLinks(c) {
 }
 
 // ─── Render ─────────────────────────────────────────────────────────────
+// Render is split sync/async so optimistic rows paint immediately on
+// click — no waiting on listCampaigns() / on-chain RPC fetches.
+//
+//   - cachedCampaigns: last successful listCampaigns() result
+//   - cachedEnrich:    rowId → { pipeState, onChain } from the last refresh
+//   - renderRows():    synchronous DOM update from cached state +
+//                      pendingDeclares (called on click + at end of refresh)
+//   - refresh():       async; refetches campaigns + enrichments, updates
+//                      caches, then calls renderRows()
+let cachedCampaigns = [];
+const cachedEnrich = new Map();
+
+function renderRows() {
+  // Drop any pending rows that have shown up server-side.
+  const seen = new Set(cachedCampaigns.map(c => (c.rowId || c.userId || "").toLowerCase()));
+  for (const id of Array.from(pendingDeclares.keys())) {
+    if (seen.has(id)) pendingDeclares.delete(id);
+  }
+  const all = [...pendingDeclares.values(), ...cachedCampaigns];
+
+  const tbody = document.getElementById("rows");
+  if (all.length === 0) {
+    tbody.innerHTML =
+      `<tr><td colspan="5" class="empty">No distribution events yet — declare one above.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = all.map((c) => {
+    const e = cachedEnrich.get((c.rowId || c.userId || "").toLowerCase()) || {};
+    return `
+      <tr>
+        <td>
+          <div class="id">${shortId(c.userId || c.rowId)}</div>
+          ${renderLinks(c)}
+        </td>
+        <td>${statusPill(c)}</td>
+        <td>${renderSnapshotCell(c, e.pipeState)}</td>
+        <td>${renderDistributionCell(c, e.onChain)}</td>
+        <td><div class="meta-row">${ago(c.createdAt)}</div></td>
+      </tr>
+    `;
+  }).join("");
+}
+
 async function refresh() {
   let campaigns;
   try {
@@ -652,24 +700,11 @@ async function refresh() {
     showBanner(err.message, "error");
     return;
   }
+  cachedCampaigns = campaigns;
 
-  // Merge in optimistic "starting" rows that haven't shown up server-side
-  // yet. Once the server returns a campaign with the same id, drop the
-  // pending entry so we don't double-render.
-  const seen = new Set(campaigns.map(c => (c.rowId || c.userId || "").toLowerCase()));
-  for (const id of Array.from(pendingDeclares.keys())) {
-    if (seen.has(id)) pendingDeclares.delete(id);
-  }
-  campaigns = [...pendingDeclares.values(), ...campaigns];
-
-  if (campaigns.length === 0) {
-    document.getElementById("rows").innerHTML =
-      `<tr><td colspan="5" class="empty">No distribution events yet — declare one above.</td></tr>`;
-    return;
-  }
-
-  // Resolve in-flight extras (pipeline state + on-chain struct) in parallel.
-  const enriched = await Promise.all(campaigns.map(async (c) => {
+  // Resolve in-flight extras (pipeline state + on-chain struct) in
+  // parallel; stash in cachedEnrich keyed by rowId.
+  await Promise.all(campaigns.map(async (c) => {
     const [pipeState, onChain] = await Promise.all([
       c.pipelineName && (c.status === "snapshotting" || c.status === "paying")
         ? pipelineState(c.pipelineName).then(r => r.state)
@@ -678,21 +713,10 @@ async function refresh() {
         ? getOnChain(c.onChainId)
         : Promise.resolve(null),
     ]);
-    return { c, pipeState, onChain };
+    cachedEnrich.set((c.rowId || c.userId || "").toLowerCase(), { pipeState, onChain });
   }));
 
-  document.getElementById("rows").innerHTML = enriched.map(({ c, pipeState, onChain }) => `
-    <tr>
-      <td>
-        <div class="id">${shortId(c.userId || c.rowId)}</div>
-        ${renderLinks(c)}
-      </td>
-      <td>${statusPill(c)}</td>
-      <td>${renderSnapshotCell(c, pipeState)}</td>
-      <td>${renderDistributionCell(c, onChain)}</td>
-      <td><div class="meta-row">${ago(c.createdAt)}</div></td>
-    </tr>
-  `).join("");
+  renderRows();
 }
 
 // ─── Seed form ──────────────────────────────────────────────────────────
