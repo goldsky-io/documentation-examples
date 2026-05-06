@@ -482,6 +482,12 @@ async function listCampaigns() {
 // userId/rowId so dedupe matches the server's casing.
 const pendingDeclares = new Map();
 
+// Wall-clock moment the user clicked Declare — kept around past the
+// pending phase so the final "completed in Ns" reflects true e2e time
+// from button press, not the server-side createdAt (which lands a few
+// seconds later, after the on-chain declare tx).
+const clickedAt = new Map();
+
 async function declare(event) {
   event.preventDefault();
   const btn = document.getElementById("declare-btn");
@@ -494,13 +500,15 @@ async function declare(event) {
   // moment they click. Cleared when the server-side campaign appears in
   // the next listCampaigns() refresh.
   const rowId = campaignId.toLowerCase();
+  const now = Date.now();
+  clickedAt.set(rowId, now);
   pendingDeclares.set(rowId, {
     rowId,
     userId: rowId,
     status: "starting",
     totalAmount,
     recordBlock: String(recordBlock),
-    createdAt: Date.now(),
+    createdAt: now,
   });
   // Synchronous re-render against last-known cache — no waiting on
   // listCampaigns() / on-chain fetches before the new row paints.
@@ -596,9 +604,7 @@ function renderSnapshotCell(c, pipeState) {
 }
 
 function renderDistributionCell(c, onChain) {
-  if (c.status === "starting" || c.status === "snapshotting") {
-    return `<div class="meta-row mono">${elapsedLabel(c)}</div>`;
-  }
+  if (c.status === "starting" || c.status === "snapshotting") return "—";
 
   if (!onChain) return `<div class="meta-row">checking on-chain…</div>`;
 
@@ -615,22 +621,23 @@ function renderDistributionCell(c, onChain) {
     <div class="progress ${isDone ? "good" : ""}"><div class="bar" style="width:${pct}%"></div></div>
     <div class="meta-row mono">${distributedUsdc} / ${totalUsdc} mUSDC</div>
     ${isDone
-      ? `<div class="meta-row" style="color: var(--good);">Settled in full · ${elapsedLabel(c)}</div>`
-      : `<div class="meta-row mono">${elapsedLabel(c)}</div>`}
+      ? `<div class="meta-row" style="color: var(--good);">Settled in full${elapsedLabel(c) ? " · " + elapsedLabel(c) : ""}</div>`
+      : ""}
   `;
 }
 
-// End-to-end elapsed time from createdAt to completion (or now, if in-flight).
+// End-to-end elapsed time, only shown on terminal states. Anchored on the
+// click moment (clickedAt map) when available — otherwise falls back to
+// the server's createdAt, which lags by ~5–10s due to the on-chain
+// declare tx that runs before the campaign row is persisted.
 function elapsedLabel(c) {
-  if (!c.createdAt) return "";
+  if (c.status !== "complete" && c.status !== "failed") return "";
+  const rowId = (c.rowId || c.userId || "").toLowerCase();
+  const start = clickedAt.get(rowId) ?? c.createdAt;
   const end = c.completedAt ?? c.failedAt ?? Date.now();
-  const seconds = Math.max(0, Math.round((end - c.createdAt) / 1000));
-  const verb = c.status === "complete" ? "completed in"
-             : c.status === "failed"   ? "failed after"
-             : "elapsed";
-  return c.status === "complete" || c.status === "failed"
-    ? `${verb} ${seconds}s`
-    : `${seconds}s ${verb}`;
+  if (!start) return "";
+  const seconds = Math.max(0, Math.round((end - start) / 1000));
+  return c.status === "complete" ? `completed in ${seconds}s` : `failed after ${seconds}s`;
 }
 
 function renderLinks(c) {
