@@ -436,7 +436,6 @@
 // COMPOSE_BASE is used by the `declare_campaign` HTTP trigger only.
 // The campaigns LIST is served by Postgres directly via /db/sql.
 const COMPOSE_BASE = "/goldsky/api/admin/compose/v1/corporate-actions/tasks";
-const PIPELINES_BASE = "/goldsky/api/v1/pipelines";
 const RPC = "/rpc";
 const CAMPAIGN_CONTRACT = "0x81051f77ea167b631Dd7F40ac414A9F9344Fb162";
 const SHARE_TOKEN_DEPLOY_BLOCK = 45363717;
@@ -611,24 +610,6 @@ async function getOnChain(onChainId) {
   }
 }
 
-// ─── Goldsky pipeline state ─────────────────────────────────────────────
-async function pipelineState(name) {
-  try {
-    const res = await fetch(`${PIPELINES_BASE}/${encodeURIComponent(name)}/state`, {
-      headers: authHeaders(),
-    });
-    if (res.status === 404) return { state: "404" };
-    const j = await res.json();
-    if (j.success === false) {
-      // typically "deployments.apps not found" — pod is gone
-      return { state: "auto-cleaned" };
-    }
-    return { state: (j.status || j.state || "unknown").toLowerCase() };
-  } catch {
-    return { state: "unreachable" };
-  }
-}
-
 // ─── Status pill ────────────────────────────────────────────────────────
 function statusPill(c) {
   const s = c.status || "unknown";
@@ -636,13 +617,13 @@ function statusPill(c) {
 }
 
 // ─── Render row ─────────────────────────────────────────────────────────
-function renderSnapshotCell(c, pipeState) {
+function renderSnapshotCell(c) {
   if (c.status === "starting") {
     return `<div class="meta-row">submitting on-chain…</div>
             <div class="meta-row mono">target block ${fmt(c.recordBlock)}</div>`;
   }
   if (c.status === "snapshotting") {
-    return `<div class="meta-row">${pipeState ? "pipeline " + pipeState : "polling…"}</div>
+    return `<div class="meta-row">indexing share-token transfers…</div>
             <div class="meta-row mono">target block ${fmt(c.recordBlock)}</div>`;
   }
   if (c.status === "paying" || c.status === "complete") {
@@ -758,7 +739,7 @@ function renderRows() {
           ${renderLinks(c)}
         </td>
         <td>${statusPill(c)}</td>
-        <td>${renderSnapshotCell(c, e.pipeState)}</td>
+        <td>${renderSnapshotCell(c)}</td>
         <td>${renderDistributionCell(c, e.onChain)}</td>
         <td><div class="meta-row">${ago(c.createdAt)}</div></td>
       </tr>
@@ -887,18 +868,12 @@ async function refresh() {
   }
   cachedCampaigns = campaigns;
 
-  // Resolve in-flight extras (pipeline state + on-chain struct) in
-  // parallel; stash in cachedEnrich keyed by rowId.
+  // Resolve on-chain campaign struct for non-snapshotting rows.
   await Promise.all(campaigns.map(async (c) => {
-    const [pipeState, onChain] = await Promise.all([
-      c.pipelineName && (c.status === "snapshotting" || c.status === "paying")
-        ? pipelineState(c.pipelineName).then(r => r.state)
-        : Promise.resolve(null),
-      c.onChainId && (c.status !== "snapshotting")
-        ? getOnChain(c.onChainId)
-        : Promise.resolve(null),
-    ]);
-    cachedEnrich.set((c.rowId || c.userId || "").toLowerCase(), { pipeState, onChain });
+    const onChain = c.onChainId && (c.status !== "snapshotting")
+      ? await getOnChain(c.onChainId)
+      : null;
+    cachedEnrich.set((c.rowId || c.userId || "").toLowerCase(), { onChain });
   }));
 
   // Refetch holders for expanded rows whose campaign hasn't finished —
