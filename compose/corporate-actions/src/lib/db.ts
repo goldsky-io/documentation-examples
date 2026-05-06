@@ -127,25 +127,21 @@ export async function aggTableRowCount(
       ctx,
       `SELECT
          (SELECT count(*)::text FROM public."${aggTable}") AS n_public,
-         (SELECT count(*)::text FROM "${aggTable}") AS n_unqual,
-         (SELECT reltuples::text FROM pg_class
-            WHERE relname = '${aggTable}' AND relnamespace = 'public'::regnamespace) AS n_planner,
          (SELECT pg_table_size('public."${aggTable}"')::text) AS bytes,
-         (SELECT string_agg(schemaname, ',' ORDER BY schemaname)
-            FROM pg_tables WHERE tablename = '${aggTable}') AS schemas,
-         current_database() AS db,
-         current_schema() AS schema,
-         current_user AS user,
-         current_setting('search_path') AS search_path,
-         inet_server_addr()::text AS host`,
+         pg_is_in_recovery()::text AS in_recovery,
+         pg_last_xact_replay_timestamp()::text AS last_replay,
+         now()::text AS now_ts,
+         (SELECT EXTRACT(epoch FROM (now() - pg_last_xact_replay_timestamp()))::text) AS replay_lag_s,
+         pg_backend_pid()::text AS pid,
+         (SELECT setting FROM pg_settings WHERE name = 'application_name') AS app_name`,
     );
     const r = diag[0] ?? {};
     const n = Number(r.n_public ?? 0);
     console.log(
-      `[db] "${aggTable}" n_public=${r.n_public} n_unqual=${r.n_unqual} ` +
-        `n_planner=${r.n_planner} bytes=${r.bytes} schemas=${r.schemas} ` +
-        `db=${r.db} schema=${r.schema} user=${r.user} ` +
-        `search_path=${r.search_path} host=${r.host}`,
+      `[db] "${aggTable}" n=${r.n_public} bytes=${r.bytes} ` +
+        `recovery=${r.in_recovery} replay_lag_s=${r.replay_lag_s} ` +
+        `last_replay=${r.last_replay} now=${r.now_ts} ` +
+        `pid=${r.pid} app=${r.app_name}`,
     );
     return n;
   } catch (err) {
