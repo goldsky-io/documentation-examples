@@ -3,11 +3,13 @@ api_version: "stable"
 
 # POSTGRES_CONNECTION_STRING is auto-injected at deploy time by compose-cloud.
 # A Goldsky-project secret named CORPORATE_ACTIONS is created alongside it,
-# referencing the same Neon DB. The job-mode Turbo pipelines this app spawns
-# (see src/lib/turbo.ts) write share-balance snapshots back into that DB.
+# referencing the same Neon DB. The job-mode Turbo pipelines that
+# declare_campaign spawns (see src/lib/turbo.ts) write share-balance
+# snapshots back into that DB.
 secrets:
-  # The project API key used to spawn / poll / delete Turbo pipelines from
-  # inside the cron task. Set once: `goldsky secret create GOLDSKY_PROJECT_KEY <key>`.
+  # Project API key used to spawn / poll / delete Turbo pipelines from
+  # inside declare_campaign. Set once:
+  #   goldsky secret create GOLDSKY_PROJECT_KEY <key>
   - GOLDSKY_PROJECT_KEY
 
 tasks:
@@ -20,13 +22,3 @@ tasks:
       max_attempts: 1
       initial_interval_ms: 500
       backoff_factor: 1
-
-  - path: "./src/tasks/process-campaigns.ts"
-    name: "process_campaigns"
-    triggers:
-      - type: "cron"
-        expression: "* * * * *" # every minute; inner state-poll loop is 5s
-    retry_config:
-      max_attempts: 2
-      initial_interval_ms: 2000
-      backoff_factor: 2

@@ -2,6 +2,7 @@ import type { TaskContext } from "compose";
 import { encodePacked, keccak256 } from "viem";
 
 import { CONFIG } from "../lib/constants";
+import { driveCampaign } from "../lib/driver";
 import { isHexBytes32 } from "../lib/normalize";
 import { createSnapshotPipeline } from "../lib/turbo";
 import type { Campaign, DeclareParams, Hex } from "../lib/types";
@@ -21,13 +22,15 @@ import type { Campaign, DeclareParams, Hex } from "../lib/types";
  *   2. Approve the campaign contract for `totalAmount` of MockUSDC.
  *   3. Call `DistributionCampaign.declare(...)` — pulls escrow atomically.
  *   4. Spawn a job-mode Turbo pipeline to snapshot holders of `shareToken`
- *      from chain genesis up to `recordBlock`. Per-campaign sink tables avoid
- *      cross-campaign aggregate contamination.
- *   5. Insert the campaign row at status="snapshotting". The cron drives it
- *      through paying → complete from there.
+ *      from the share-token deploy block up to `recordBlock`. Per-campaign
+ *      sink tables avoid cross-campaign aggregate contamination.
+ *   5. Drive the campaign through snapshot → paying → complete inline,
+ *      polling the pipeline at STATE_POLL_INTERVAL_MS until done. The
+ *      whole lifecycle finishes in this single HTTP request.
  *
- * Idempotent on `campaignId`: a second POST with the same id returns the
- * existing campaign without retrying any of the above.
+ * Idempotent on `campaignId`: a second POST with the same id resumes the
+ * existing campaign (drives it forward if non-terminal) instead of
+ * re-declaring.
  */
 export async function main(context: TaskContext, params?: DeclareParams) {
   const { evm, collection } = context;
@@ -50,7 +53,11 @@ export async function main(context: TaskContext, params?: DeclareParams) {
   const rowId = userId.toLowerCase();
   const existing = await campaigns.getById(rowId);
   if (existing) {
-    return { status: "already-declared", campaign: existing };
+    // Resume an in-flight campaign — keep driving it forward. Terminal
+    // states (complete/failed) just return without doing anything.
+    await driveCampaign(context, campaigns, existing);
+    const fresh = (await campaigns.getById(rowId)) ?? existing;
+    return responseFor(fresh, "resumed");
   }
 
   // --- recordBlock <= currentBlock ---
@@ -93,8 +100,8 @@ export async function main(context: TaskContext, params?: DeclareParams) {
 
   // --- spawn the snapshot pipeline ---
   // If this fails AFTER declare(), the operator can recover escrow with
-  // DistributionCampaign.seal(). The campaign row is not written, so the
-  // cron will not try to drive it forward.
+  // DistributionCampaign.seal(). The campaign row is not written, so
+  // there's nothing to drive forward.
   const pipeline = await createSnapshotPipeline(context, {
     campaignId: userId,
     shareToken: CONFIG.shareToken,
@@ -116,12 +123,23 @@ export async function main(context: TaskContext, params?: DeclareParams) {
   };
   await campaigns.setById(rowId, campaign);
 
+  // Drive the campaign through snapshot → paying → complete inline. If
+  // anything throws, the partial state is preserved and the operator can
+  // re-POST the same campaignId to resume. Re-throw to surface failure.
+  await driveCampaign(context, campaigns, campaign);
+  const final = (await campaigns.getById(rowId)) ?? campaign;
+  return responseFor(final, "declared");
+}
+
+function responseFor(c: Campaign, source: "declared" | "resumed") {
   return {
-    status: "declared",
-    userId: campaign.userId,
-    onChainId,
-    pipelineName: pipeline.name,
-    declareTxHash: hash,
+    status: c.status,
+    source,
+    userId: c.userId,
+    onChainId: c.onChainId,
+    pipelineName: c.pipelineName,
+    declareTxHash: c.declareTxHash,
+    failureReason: c.status === "failed" ? c.failureReason : undefined,
   };
 }
 

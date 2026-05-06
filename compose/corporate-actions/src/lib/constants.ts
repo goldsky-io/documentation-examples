@@ -24,22 +24,25 @@ export const CONFIG = {
 
 /**
  * Concurrent pay() calls. Bounded by the gas-sponsored bundler's throughput
- * (~1-5 userOps/sec/sender). 5 is a safe demo default.
+ * (~1-5 userOps/sec/sender). 10 fits the demo's typical 10-holder snapshot
+ * in a single batch.
  */
-export const CONCURRENCY = 5;
+export const CONCURRENCY = 10;
 
 /**
- * State-poll cadence inside a single cron tick while waiting for the Turbo
- * job-mode snapshot to finish. Snappy for the demo; cheap (proxied call).
+ * State-poll cadence while waiting for the Turbo job-mode snapshot to
+ * finish. With Jeff's filter-level block range the snapshot finishes in
+ * ~5-10s, so we poll fast (2s) so `declare_campaign` can drive the campaign
+ * end-to-end inline before returning.
  */
-export const STATE_POLL_INTERVAL_MS = 5_000;
+export const STATE_POLL_INTERVAL_MS = 2_000;
 
 /**
- * Hard cap on per-tick state polling so we don't hold a cron tick forever.
- * Sized to fit comfortably inside the cron's 1-minute boundary; if the
- * snapshot is genuinely slower, the next tick resumes polling.
+ * Hard cap on snapshot-poll iterations per drive call. Set high so we wait
+ * out the snapshot in-line for any realistic case; pathological hangs still
+ * eventually fall through to the cron path.
  */
-export const MAX_POLLS_PER_TICK = 10;  // 10 × 5s = 50 seconds
+export const MAX_POLLS_PER_TICK = 100;  // 100 × 2s = ~3.3 minutes
 
 /**
  * The Turbo pipeline writes into per-campaign tables to avoid cross-campaign

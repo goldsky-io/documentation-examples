@@ -6,67 +6,35 @@ import {
   CONFIG,
   MAX_POLLS_PER_TICK,
   STATE_POLL_INTERVAL_MS,
-} from "../lib/constants";
-import { aggTableRowCount, dropCampaignTables, getHolders } from "../lib/db";
-import { proRata } from "../lib/math";
-import { deletePipeline, getPipelineState } from "../lib/turbo";
-import type { Campaign, Payout } from "../lib/types";
+} from "./constants";
+import { aggTableRowCount, dropCampaignTables, getHolders } from "./db";
+import { proRata } from "./math";
+import { deletePipeline, getPipelineState } from "./turbo";
+import type { Campaign, Payout } from "./types";
 
 /**
- * Cron trigger.
+ * Drive a single campaign through the snapshot → paying → complete state
+ * machine. Called inline by declare_campaign; can be called repeatedly to
+ * resume a stuck campaign.
  *
- * For each non-terminal campaign in the collection:
- *
- *   - status="snapshotting": poll the campaign's job-mode pipeline state every
- *     STATE_POLL_INTERVAL_MS until it transitions to `completed` or `error`.
- *     On `completed` → flip to "paying". On `error` → flip to "failed",
- *     drop the per-campaign tables, delete the pipeline.
+ *   - status="snapshotting": poll the campaign's job-mode pipeline state at
+ *     STATE_POLL_INTERVAL_MS up to MAX_POLLS_PER_TICK iterations until it
+ *     transitions to `completed` (or its k8s deployment auto-cleans up
+ *     after a successful run, which we infer from `unknown` + agg table
+ *     having rows). On `error` → flip to "failed", drop the per-campaign
+ *     tables, delete the pipeline.
  *
  *   - status="paying": read the snapshot from the per-campaign agg table,
  *     compute pro-rata, pay each holder via DistributionCampaign.pay() with
  *     bounded concurrency. The contract's `paid[id][holder]` mapping is the
- *     sole source of truth for "did this holder get paid?" — we re-read that
- *     state on every cron tick, so a pod kill mid-batch is recovered cleanly.
- *     When all on-chain `isPaid` are true → mark complete, delete pipeline,
+ *     sole source of truth for "did this holder get paid?" — re-read on
+ *     every drive call, so a pod kill mid-batch is recovered cleanly.
+ *     When `escrowRemaining == 0` → mark complete, delete pipeline,
  *     drop tables.
  *
- *   - status="complete" or "failed": skipped. Terminal.
+ *   - status="complete" or "failed": no-op. Terminal.
  */
-export async function main(context: TaskContext) {
-  const { collection, evm } = context;
-
-  // Eagerly resolve the wallet so its address shows up in idle-tick logs and
-  // the Privy provisioning runs once on first invocation.
-  const wallet = await evm.wallet({
-    name: "corp-actions-operator",
-    sponsorGas: true,
-  });
-
-  const campaigns = await collection<Campaign>("campaigns");
-  const active = await campaigns.findMany({
-    status: { $in: ["snapshotting", "paying"] },
-  });
-
-  if (active.length === 0) {
-    console.log(
-      `Operator wallet: ${wallet.address}. No active campaigns; idle.`,
-    );
-    return { processed: 0, operator: wallet.address };
-  }
-
-  for (const campaign of active) {
-    try {
-      await processCampaign(context, campaigns, campaign);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.log(`[${campaign.userId}] tick failed: ${msg}`);
-      // Don't mark failed on a transient error — the next tick retries.
-    }
-  }
-  return { processed: active.length, operator: wallet.address };
-}
-
-async function processCampaign(
+export async function driveCampaign(
   context: TaskContext,
   campaigns: Awaited<ReturnType<TaskContext["collection"]>>,
   campaign: Campaign,
@@ -81,11 +49,6 @@ async function processCampaign(
   }
 }
 
-/**
- * Poll the pipeline up to MAX_POLLS_PER_TICK times, sleeping
- * STATE_POLL_INTERVAL_MS between polls. Bounded so we don't sit on a cron
- * tick forever; if the snapshot is genuinely slow, the next tick resumes.
- */
 async function driveSnapshot(
   context: TaskContext,
   campaigns: Awaited<ReturnType<TaskContext["collection"]>>,
@@ -109,8 +72,8 @@ async function driveSnapshot(
     // The Postgres sink commits the table on its FIRST checkpoint — even
     // an empty epoch creates the schema. So we have to count rows, not
     // just check the table exists, or a brief `/state` 404 mid-scan can
-    // race the cron into transitioning to `paying` while the pipeline is
-    // still scanning ahead of the share token's deploy block.
+    // race the driver into transitioning to `paying` while the pipeline
+    // is still scanning ahead of the share token's deploy block.
     //
     // Two paths to "snapshot ready":
     //   1. Pipeline reports completed/paused/stopped AND the table has
@@ -146,7 +109,8 @@ async function driveSnapshot(
         status: "paying",
         snapshotCompletedAt: Date.now(),
       });
-      const fresh = await campaigns.getById(campaign.rowId);
+      const fresh = (await campaigns.getById(campaign.rowId)) as
+        | unknown as Campaign | undefined;
       if (fresh) await drivePayouts(context, campaigns, fresh);
       return;
     }
@@ -158,7 +122,7 @@ async function driveSnapshot(
   }
   console.log(
     `[${campaign.userId}] snapshot still in-flight after ${MAX_POLLS_PER_TICK} polls; ` +
-      `will resume next cron tick`,
+      `re-call declare_campaign with the same id to resume`,
   );
 }
 
@@ -195,7 +159,7 @@ async function drivePayouts(
 
   // Filter to unpaid holders by reading on-chain state. The contract is the
   // sole source of truth — if the pod was killed mid-batch on a previous
-  // tick, the already-paid holders show up here as paid and we skip them.
+  // call, the already-paid holders show up here as paid and we skip them.
   const unpaid: Payout[] = [];
   for (const p of payouts) {
     const isAlreadyPaid = await wallet.readContract(
@@ -290,7 +254,7 @@ async function maybeMarkComplete(
     [campaign.onChainId],
   );
   const escrowRemaining = c[4];
-  if (escrowRemaining > 0n) return; // not done; next tick will keep paying
+  if (escrowRemaining > 0n) return; // not done; caller can re-drive to keep paying
 
   await terminalCleanup(context, campaign);
   await campaigns.setById(campaign.rowId, {
