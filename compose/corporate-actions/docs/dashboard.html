@@ -3,169 +3,384 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Corporate-Actions Distributor — Live</title>
+<title>Corporate Actions — Distribution Operations</title>
 <style>
   :root {
-    --ink: #0b0e14;
-    --ink-soft: #2a2f3a;
-    --paper: #faf8f3;
-    --paper-soft: #f3efe7;
-    --accent: #8a4d2b;
-    --accent-soft: #d8c9b6;
-    --rule: #c9c0b1;
-    --good: #2f6b3a;
-    --bad: #8b2f2f;
-    --code-bg: #f0ece2;
-    --hint: #6e6859;
+    /* Broadridge palette: deep navy primary, saturated blue accent, cool neutrals */
+    --ink: #000c36;          /* primary navy — brand wordmark, headings */
+    --ink-soft: #1f2a4a;     /* secondary text */
+    --paper: #ffffff;        /* canvas */
+    --paper-soft: #f5f7fb;   /* surface tint, table hover */
+    --accent: #0f3db5;       /* brand blue — CTAs, links, progress */
+    --accent-soft: #e7f1fc;  /* tinted card / pill background */
+    --rule: #e5e7eb;         /* dividers, borders */
+    --good: #1c7c3a;         /* success green */
+    --bad: #cc3932;          /* brand red, used sparingly */
+    --code-bg: #f5f7fb;
+    --hint: #5c6677;         /* tertiary text */
   }
   * { box-sizing: border-box; }
   html { -webkit-font-smoothing: antialiased; }
   body {
     margin: 0;
-    background: var(--paper);
+    background: var(--paper-soft);
     color: var(--ink);
-    font: 16px/1.55 "Charter", "Iowan Old Style", "Cambria", "Georgia", serif;
+    font: 14px/1.5 "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
   }
-  .wrap { max-width: 1100px; margin: 0 auto; padding: 36px 32px 80px; }
-  header { border-bottom: 1px solid var(--rule); padding-bottom: 22px; margin-bottom: 28px; display: flex; justify-content: space-between; align-items: end; gap: 24px; flex-wrap: wrap; }
-  .eyebrow { font: 11px/1 ui-sans-serif, -apple-system, "Inter", system-ui, sans-serif; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
-  h1 { font-size: 28px; line-height: 1.15; margin: 0 0 6px; letter-spacing: -0.01em; }
-  p.sub { color: var(--ink-soft); margin: 0; }
-  .meta { font: 12.5px/1.5 ui-mono, "SF Mono", monospace; color: var(--hint); text-align: right; }
-  .meta a { color: var(--accent); text-decoration: none; }
-  .meta a:hover { text-decoration: underline; }
+
+  /* ─── Top utility bar ─────────────────────────────────────────── */
+  .topbar {
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+    font: 12px/1 "Inter", -apple-system, system-ui, sans-serif;
+    color: var(--hint);
+  }
+  .topbar-inner {
+    max-width: 1280px; margin: 0 auto; padding: 8px 32px;
+    display: flex; justify-content: flex-end; gap: 20px;
+  }
+  .topbar a { color: var(--hint); text-decoration: none; }
+  .topbar a:hover { color: var(--ink); }
+
+  /* ─── Brand header ────────────────────────────────────────────── */
+  .brandbar {
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+  }
+  .brandbar-inner {
+    max-width: 1280px; margin: 0 auto; padding: 18px 32px;
+    display: flex; align-items: center; justify-content: space-between; gap: 24px;
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand svg { display: block; }
+  .brand .product {
+    border-left: 1px solid var(--rule);
+    padding-left: 14px; margin-left: 4px;
+    font: 600 14px/1.2 "Inter", system-ui, sans-serif;
+    color: var(--ink);
+    letter-spacing: -0.005em;
+  }
+  .brand .product .crumb {
+    display: block;
+    font: 500 11px/1 "Inter", system-ui, sans-serif;
+    color: var(--hint);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 4px;
+  }
+
+  .pagehead {
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+  }
+  .pagehead-inner {
+    max-width: 1280px; margin: 0 auto; padding: 28px 32px 26px;
+    display: flex; justify-content: space-between; align-items: flex-end; gap: 32px; flex-wrap: wrap;
+  }
+  .pagehead h1 {
+    font: 600 24px/1.2 "Inter", system-ui, sans-serif;
+    margin: 0 0 6px;
+    letter-spacing: -0.015em;
+    color: var(--ink);
+  }
+  .pagehead p.sub {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 13.5px;
+    max-width: 640px;
+  }
+  .pagehead .meta {
+    font: 12px/1.7 "Inter", system-ui, sans-serif;
+    color: var(--hint);
+    text-align: right;
+  }
+  .pagehead .meta .row { white-space: nowrap; }
+  .pagehead .meta .lbl { color: var(--hint); }
+  .pagehead .meta a {
+    color: var(--accent); text-decoration: none;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11.5px;
+  }
+  .pagehead .meta a:hover { text-decoration: underline; }
+
+  /* ─── Main canvas ─────────────────────────────────────────────── */
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 28px 32px 80px; }
 
   h2 {
-    font: 600 16px/1.25 ui-sans-serif, -apple-system, "Inter", system-ui, sans-serif;
-    margin: 32px 0 12px;
+    font: 600 13px/1.2 "Inter", system-ui, sans-serif;
+    margin: 0 0 12px;
     color: var(--ink);
-    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .section { margin-bottom: 28px; }
+
+  /* ─── Card ────────────────────────────────────────────────────── */
+  .card {
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    box-shadow: 0 1px 2px rgba(0, 12, 54, 0.04);
   }
 
-  /* Trigger card */
+  /* ─── Trigger form ────────────────────────────────────────────── */
   .trigger {
-    border: 1px solid var(--rule); border-radius: 6px;
-    padding: 18px 20px; background: var(--paper-soft);
-    display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; align-items: end;
-    font: 13.5px/1.4 ui-sans-serif, system-ui, sans-serif;
+    padding: 18px 20px;
+    display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 14px; align-items: end;
+    font: 13px/1.4 "Inter", system-ui, sans-serif;
   }
   .trigger label { display: block; }
-  .trigger .lbl { font: 11px/1 ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.08em; text-transform: uppercase; color: var(--hint); margin-bottom: 4px; }
-  .trigger input { width: 100%; padding: 8px 10px; border: 1px solid var(--rule); background: white; border-radius: 4px; font: 13px/1.4 ui-mono, "SF Mono", monospace; }
-  .trigger button {
-    padding: 8px 16px; border: 1px solid var(--accent); background: var(--accent); color: white;
-    border-radius: 4px; cursor: pointer; font: 600 13px/1.4 ui-sans-serif, system-ui, sans-serif;
+  .trigger .lbl {
+    font: 500 11px/1 "Inter", system-ui, sans-serif;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--hint);
+    margin-bottom: 6px;
   }
-  .trigger button:hover { background: #6f3d22; }
+  .trigger .lbl .sublbl {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--hint);
+    font-size: 10.5px;
+    margin-left: 4px;
+  }
+  .trigger input {
+    width: 100%; padding: 8px 10px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    border-radius: 4px;
+    font: 12.5px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink);
+  }
+  .trigger input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(15, 61, 181, 0.12);
+  }
+  .trigger button {
+    padding: 9px 18px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font: 600 13px/1.4 "Inter", system-ui, sans-serif;
+    letter-spacing: 0.005em;
+  }
+  .trigger button:hover { background: #0a2f8f; border-color: #0a2f8f; }
   .trigger button:disabled { opacity: 0.5; cursor: wait; }
 
-  /* Table */
+  /* ─── Table ──────────────────────────────────────────────────── */
   table.campaigns {
     width: 100%; border-collapse: collapse;
-    font: 13px/1.4 ui-sans-serif, system-ui, sans-serif;
-    margin-top: 8px;
+    font: 13px/1.45 "Inter", system-ui, sans-serif;
+    background: var(--paper);
+    border-radius: 6px;
+    overflow: hidden;
   }
+  table.campaigns thead { background: var(--paper-soft); }
   table.campaigns th {
-    text-align: left; padding: 8px 10px;
-    border-bottom: 1px solid var(--ink);
-    font: 10.5px/1 ui-sans-serif, system-ui, sans-serif;
-    text-transform: uppercase; letter-spacing: 0.08em; color: var(--hint);
+    text-align: left; padding: 10px 14px;
+    border-bottom: 1px solid var(--rule);
+    font: 600 11px/1 "Inter", system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--hint);
   }
-  table.campaigns td { padding: 12px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  table.campaigns td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+    color: var(--ink-soft);
+  }
+  table.campaigns tr:last-child td { border-bottom: none; }
   table.campaigns tr:hover td { background: var(--paper-soft); }
-  table.campaigns .id { font: 12px/1.4 ui-mono, "SF Mono", monospace; color: var(--ink); }
-  table.campaigns .meta-row { font: 11px/1.4 ui-mono, "SF Mono", monospace; color: var(--hint); margin-top: 4px; }
+  table.campaigns .id {
+    font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--ink);
+    font-weight: 500;
+  }
+  table.campaigns .meta-row {
+    font: 11.5px/1.5 "Inter", system-ui, sans-serif;
+    color: var(--hint);
+    margin-top: 3px;
+  }
+  table.campaigns .meta-row.mono {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px;
+  }
 
+  /* ─── Status pill — understated, color-coded ──────────────────── */
   .pill {
-    display: inline-block; padding: 2px 8px; border-radius: 999px;
-    font: 11px/1.5 ui-sans-serif, system-ui, sans-serif;
-    background: var(--paper-soft); color: var(--ink-soft); border: 1px solid var(--rule);
-    text-transform: lowercase; letter-spacing: 0.02em;
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 9px 3px 8px;
+    border-radius: 4px;
+    font: 600 11px/1.5 "Inter", system-ui, sans-serif;
+    text-transform: capitalize;
+    letter-spacing: 0.01em;
+    background: var(--paper-soft);
+    color: var(--ink-soft);
+    border: 1px solid var(--rule);
   }
-  .pill.snapshotting { background: #fff5e0; color: #7a5500; border-color: #e6c07a; }
-  .pill.paying { background: #e0eaff; color: #1f4090; border-color: #93b0e6; }
-  .pill.complete { background: #e8f1e3; color: var(--good); border-color: #b7d3aa; }
-  .pill.failed { background: #fbe6e6; color: var(--bad); border-color: #d8a0a0; }
+  .pill::before {
+    content: "";
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.7;
+  }
+  .pill.snapshotting { background: #fff7e6; color: #8a5a00; border-color: #f5dfa8; }
+  .pill.paying       { background: #e7f1fc; color: var(--accent); border-color: #b9d1f3; }
+  .pill.complete     { background: #e6f4ea; color: var(--good); border-color: #b8dcc1; }
+  .pill.failed       { background: #fdecec; color: var(--bad); border-color: #f0bdba; }
 
-  /* Progress bar */
+  /* ─── Progress bar ────────────────────────────────────────────── */
   .progress {
-    display: inline-block; width: 120px; height: 8px; background: var(--paper-soft);
-    border-radius: 999px; overflow: hidden; vertical-align: middle; border: 1px solid var(--rule);
+    display: inline-block; width: 140px; height: 6px;
+    background: var(--paper-soft);
+    border-radius: 999px;
+    overflow: hidden; vertical-align: middle;
+    border: 1px solid var(--rule);
   }
-  .progress > .bar { height: 100%; background: var(--accent); transition: width 0.3s ease; }
+  .progress > .bar {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
+  }
   .progress.good > .bar { background: var(--good); }
 
-  .links { font: 11.5px/1.6 ui-sans-serif, system-ui, sans-serif; color: var(--hint); margin-top: 6px; }
-  .links a { color: var(--accent); text-decoration: none; margin-right: 12px; }
+  .links {
+    font: 11.5px/1.5 "Inter", system-ui, sans-serif;
+    color: var(--hint);
+    margin-top: 6px;
+  }
+  .links a {
+    color: var(--accent);
+    text-decoration: none;
+    margin-right: 12px;
+  }
   .links a:hover { text-decoration: underline; }
 
-  .empty { padding: 40px; text-align: center; color: var(--hint); font-style: italic; }
+  .empty {
+    padding: 48px;
+    text-align: center;
+    color: var(--hint);
+    font-size: 13px;
+  }
 
-  /* Banner / errors */
-  #banner { padding: 10px 14px; border-radius: 4px; margin-bottom: 16px; font: 13px/1.4 ui-sans-serif, system-ui, sans-serif; display: none; }
-  #banner.error { background: #fbe6e6; color: var(--bad); border: 1px solid #d8a0a0; display: block; }
-  #banner.info  { background: #e8f1e3; color: var(--good); border: 1px solid #b7d3aa; display: block; }
+  /* ─── Banner ─────────────────────────────────────────────────── */
+  #banner {
+    padding: 10px 14px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    font: 13px/1.4 "Inter", system-ui, sans-serif;
+    display: none;
+  }
+  #banner.error { background: #fdecec; color: var(--bad); border: 1px solid #f0bdba; display: block; }
+  #banner.info  { background: #e6f4ea; color: var(--good); border: 1px solid #b8dcc1; display: block; }
 </style>
 </head>
 <body>
+
+<!-- Top utility strip — mimics broadridge.com chrome -->
+<div class="topbar">
+  <div class="topbar-inner">
+    <a href="#">Client access</a>
+    <a href="#">Support</a>
+  </div>
+</div>
+
+<!-- Brand header — Broadridge wordmark + product crumb -->
+<div class="brandbar">
+  <div class="brandbar-inner">
+    <div class="brand">
+      <!-- Inline Broadridge wordmark (sourced from broadridge.com /_Static-Assets/images/brodridgeLogo.svg) -->
+      <svg width="148" height="33" viewBox="0 0 160 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Broadridge">
+        <path d="M45.2382 27.2045H39.6191V10.1171H45.3334C48.4763 10.1171 51.2382 11.1643 51.2382 14.4009C51.2382 16.5903 50.0477 17.8279 48.1906 18.3514V18.399C50.2382 18.6846 51.9525 20.0649 51.9525 22.4924C51.9525 25.967 49.1429 27.2045 45.2382 27.2045ZM44.9525 12.8778H42.8572V17.1615H44.8572C46.8096 17.1615 47.6668 16.4475 47.6668 14.972C47.6668 13.4965 46.762 12.8778 44.9525 12.8778ZM44.9049 19.7317H42.8572V24.4439H44.762C46.8572 24.4439 47.9525 23.8251 47.9525 22.1592C47.9525 20.5409 47.0001 19.7317 44.9049 19.7317ZM62.0953 14.734C61.8096 14.5912 61.3334 14.4009 60.381 14.4009C58.8096 14.4009 57.762 15.4956 57.2382 16.3999V14.6864H53.8096V27.2045H57.2382V19.3034C57.5239 18.7322 58.4287 17.3995 59.9525 17.3995C60.6667 17.3995 61.0477 17.5423 61.2858 17.6851L62.0953 14.734ZM68.1906 27.4901C63.8096 27.4901 61.9048 24.1583 61.9048 20.9693C61.9048 17.7803 63.762 14.3533 68.1429 14.3533C72.5239 14.3533 74.4763 17.6375 74.4763 20.8741C74.5239 24.0631 72.5715 27.4901 68.1906 27.4901ZM68.1429 16.9235C66.2382 16.9235 65.5715 18.5418 65.5715 20.8741C65.5715 23.2063 66.3334 24.9198 68.2858 24.9198C70.2382 24.9198 70.9525 23.3491 70.9525 20.9693C70.9048 18.637 70.0953 16.9235 68.1429 16.9235ZM82.9048 27.2045C82.8096 26.9189 82.7144 26.2526 82.7144 25.8718C82.1429 26.5381 80.9525 27.4901 79.1906 27.4901C77.0477 27.4901 75.4286 26.205 75.4286 23.9679C75.4286 20.6837 78.8096 19.5414 82.0953 19.5414H82.5239V18.8274C82.5239 17.7327 82.0953 17.0663 80.4763 17.0663C78.8572 17.0663 77.762 17.9231 77.2858 18.2562L75.8096 16.162C76.5715 15.4956 78.1906 14.3533 80.8572 14.3533C84.2858 14.3533 85.9048 15.686 85.9048 18.9702V23.4443C85.9048 25.1578 86.0953 26.3478 86.2382 27.1569L82.9048 27.2045ZM82.1905 21.6356H81.762C79.762 21.6356 78.381 22.2068 78.381 23.6823C78.381 24.5867 79.1429 24.9674 79.9048 24.9674C81.1429 24.9674 81.8572 24.2535 82.2382 23.8727L82.1905 21.6356ZM93.2858 14.4009C94.8096 14.4009 95.7143 14.9244 96.1905 15.2576V8.78439H99.6191V23.6347C99.6191 25.253 99.8096 26.4905 100 27.2045H96.6191C96.5239 26.9189 96.381 26.2526 96.381 25.8242C95.6191 26.7285 94.5239 27.5377 92.8572 27.5377C89.7144 27.5377 87.7144 25.1578 87.7144 20.9693C87.7144 16.9711 90.0953 14.4009 93.2858 14.4009ZM93.8572 24.777C95.0953 24.777 95.9048 23.9203 96.1905 23.4919V17.8755C95.762 17.4947 95.0953 17.0663 94.0001 17.0663C92.2382 17.0663 91.2858 18.5418 91.2858 21.0169C91.3334 23.3967 92.1429 24.777 93.8572 24.777ZM110.476 14.734C110.191 14.5912 109.714 14.4009 108.762 14.4009C107.191 14.4009 106.143 15.4956 105.619 16.3999V14.6864H102.191V27.2045H105.619V19.3034C105.905 18.7322 106.81 17.3995 108.333 17.3995C109.048 17.3995 109.429 17.5423 109.667 17.6851L110.476 14.734ZM113.524 13.0681C114.667 13.0681 115.476 12.1638 115.476 11.1643C115.476 10.1647 114.619 9.30796 113.524 9.30796C112.429 9.30796 111.571 10.1647 111.571 11.1643C111.571 12.2114 112.381 13.0681 113.524 13.0681ZM111.81 27.2045H115.238V14.6864H111.81V27.2045ZM122.762 14.4009C124.286 14.4009 125.191 14.9244 125.667 15.2576V8.78439H129.095V23.6347C129.095 25.253 129.286 26.4905 129.476 27.2045H126.095C126 26.9189 125.857 26.2526 125.857 25.8242C125.095 26.7285 124 27.5377 122.333 27.5377C119.191 27.5377 117.191 25.1578 117.191 20.9693C117.143 16.9711 119.524 14.4009 122.762 14.4009ZM123.286 24.777C124.524 24.777 125.333 23.9203 125.619 23.4919V17.8755C125.191 17.4947 124.524 17.0663 123.429 17.0663C121.667 17.0663 120.714 18.5418 120.714 21.0169C120.762 23.3967 121.571 24.777 123.286 24.777ZM143.143 14.4009V16.9235H141.476C141.81 17.4947 141.952 18.2086 141.952 18.9226C141.952 21.588 140.048 23.4443 136.571 23.4443C136.048 23.4443 135.524 23.3967 135.095 23.3015C134.905 23.4443 134.619 23.6823 134.619 24.0631C134.619 24.7295 135.333 24.8722 137.143 24.9674C139.714 25.1102 143.048 25.1102 143.048 28.8228C143.048 31.4883 140.286 33.3445 136.191 33.3445C132.762 33.3445 130.667 32.2498 130.667 30.0127C130.667 28.6324 131.524 27.6329 132.762 26.9665C132.048 26.5381 131.667 25.967 131.667 25.0626C131.667 23.8727 132.333 23.1587 133.095 22.6828C131.667 21.8736 130.857 20.5885 130.857 18.9226C130.857 16.2096 132.952 14.4009 136.429 14.4009C137.191 14.4009 143.143 14.4009 143.143 14.4009ZM133.571 29.3464C133.571 30.3459 134.286 31.0599 136 31.0599C138.095 31.0599 139.238 30.2507 139.238 29.2036C139.238 27.8709 138.048 27.9185 136.238 27.7757C135.667 27.7281 135.095 27.6805 134.524 27.5853C133.905 28.0613 133.571 28.6324 133.571 29.3464ZM138.667 18.9226C138.667 17.4471 137.81 16.5903 136.381 16.5903C134.952 16.5903 134.095 17.4471 134.095 18.9226C134.095 20.3505 134.952 21.2549 136.381 21.2549C137.81 21.2549 138.667 20.3505 138.667 18.9226ZM150.619 24.9674C152.333 24.9674 153.286 24.3963 153.905 24.1107L155 26.3002C154.191 26.7761 152.905 27.4901 150.333 27.4901C146.143 27.4901 143.762 24.8246 143.762 20.8741C143.762 16.9235 146.476 14.3533 149.952 14.3533C153.857 14.3533 155.762 17.0663 155.333 21.6832H147.381C147.524 23.6823 148.524 24.9674 150.619 24.9674ZM152.048 19.4462C152 18.0182 151.476 16.8759 149.905 16.8759C148.476 16.8759 147.667 17.7803 147.429 19.4462H152.048ZM158.238 17.9231C157.286 17.9231 156.476 17.1615 156.476 16.162C156.476 15.1624 157.238 14.4009 158.238 14.4009C159.19 14.4009 160 15.1624 160 16.162C160 17.1615 159.19 17.9231 158.238 17.9231ZM158.238 14.6864C157.381 14.6864 156.762 15.3052 156.762 16.162C156.762 17.0187 157.381 17.6375 158.238 17.6375C159.095 17.6375 159.714 17.0187 159.714 16.162C159.714 15.3052 159.095 14.6864 158.238 14.6864ZM158.714 17.2091L158.238 16.4951C158.143 16.3523 158.095 16.3047 157.905 16.3047V17.2567H157.619V15.1148H158.333C158.762 15.1148 159 15.4004 159 15.686C159 16.0192 158.81 16.162 158.476 16.2096C158.571 16.2572 158.619 16.3523 158.714 16.4951L159.19 17.1615L158.714 17.2091ZM158.238 15.4004H157.952V16.0192H158.143C158.381 16.0192 158.619 15.9716 158.619 15.686C158.619 15.5432 158.524 15.4004 158.238 15.4004Z" fill="#000C36"/>
+        <path d="M0 0.850342V35.1497H30.9047V0.850342H0ZM29.5714 2.13657V18H1.28571V4.89957H1.33333C1.38095 4.89957 7.14285 4.75666 10.9524 8.42478C12.4286 9.85392 13.4762 11.7118 14 13.9508C12.4762 12.2358 9.66666 10.7114 4.90476 10.7114V11.9976C14.1905 11.9976 14.4762 17.9047 14.4762 17.9524H16.4762C16.4762 13.8555 18.0476 10.9972 21.1428 9.37754C23.4762 8.18659 25.8095 8.13895 26.0952 8.13895V6.13816C25.7619 6.13816 23 6.18579 20.2381 7.61493C18.619 8.47242 16.8095 9.90156 15.6667 12.2835C15 10.1874 13.9048 8.37714 12.3809 6.90036C8.04762 2.75586 1.95238 2.8035 1.38095 2.8035V2.04129C1.28571 2.13657 29.5714 2.13657 29.5714 2.13657ZM29.5714 33.1012C29 33.1012 22.8571 33.1965 18.5714 29.0044C17.0476 27.5276 15.9524 25.765 15.2857 23.6213C14.1428 26.0508 12.3333 27.48 10.7143 28.2898C7.95238 29.7189 5.19047 29.7666 4.85714 29.7666V27.7658C5.09524 27.7658 7.47619 27.7182 9.80952 26.5272C12.9048 24.9075 14.4762 22.0492 14.4762 17.9524H16.4762C16.4762 18 16.7143 23.9071 26.0476 23.9071V25.1933C21.2381 25.1933 18.4762 23.6689 16.9524 21.954C17.4762 24.1929 18.5238 26.0508 20 27.4800C23.8095 31.1957 29.5714 31.0052 29.6190 31.0052H29.6667C29.5714 31.1481 29.5714 33.1012 29.5714 33.1012Z" fill="#000C36"/>
+      </svg>
+      <div class="product">
+        <span class="crumb">Asset Servicing</span>
+        Corporate Actions Distribution
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Page header — title + meta -->
+<div class="pagehead">
+  <div class="pagehead-inner">
+    <div>
+      <h1>Distribution Operations</h1>
+      <p class="sub">Declare a distribution event, snapshot record-date holders, and disburse entitlements on-chain.</p>
+    </div>
+    <div class="meta">
+      <div class="row"><span class="lbl">Operator</span> <a id="operator-link" target="_blank">…</a></div>
+      <div class="row"><span class="lbl">Share class</span> <a href="https://basescan.org/address/0x6320a7b21965430d783Eedda5743824f1B5Ce2Ed" target="_blank">EIS · 0x6320…E2Ed</a></div>
+      <div class="row"><span class="lbl">Event registry</span> <a href="https://basescan.org/address/0x81051f77ea167b631Dd7F40ac414A9F9344Fb162#events" target="_blank">0x8105…b162</a></div>
+    </div>
+  </div>
+</div>
+
 <div class="wrap">
 
-<header>
-  <div>
-    <div class="eyebrow">Compose · Turbo · Live</div>
-    <h1>Corporate-Actions Distributor</h1>
-    <p class="sub">Trigger a distribution. Watch compose orchestrate Turbo, snapshot holders, and pay them on-chain.</p>
+  <div id="banner"></div>
+
+  <div class="section">
+    <h2>Declare distribution</h2>
+    <div class="card">
+      <form class="trigger" onsubmit="declare(event)">
+        <label>
+          <span class="lbl">Event ID</span>
+          <input id="campaignId" readonly>
+        </label>
+        <label>
+          <span class="lbl">Record block <span class="sublbl">(currentBlock − 32)</span></span>
+          <input id="recordBlock" type="number">
+        </label>
+        <label>
+          <span class="lbl">Total entitlement <span class="sublbl">(mUSDC base units)</span></span>
+          <input id="totalAmount" type="text" value="10000000000">
+        </label>
+        <button id="declare-btn" type="submit">Declare event</button>
+      </form>
+    </div>
   </div>
-  <div class="meta">
-    <div>Operator: <a id="operator-link" target="_blank">…</a></div>
-    <div>ShareToken: <a href="https://basescan.org/address/0x6320a7b21965430d783Eedda5743824f1B5Ce2Ed" target="_blank">EIS</a></div>
-    <div>Campaign contract: <a href="https://basescan.org/address/0x81051f77ea167b631Dd7F40ac414A9F9344Fb162#events" target="_blank">events</a></div>
-    <div>Compose app: <a href="https://app.goldsky.com/dashboard/compose" target="_blank">Goldsky console</a></div>
+
+  <div class="section">
+    <h2>Distribution events</h2>
+    <div class="card">
+      <table class="campaigns" id="table">
+        <thead>
+          <tr>
+            <th>Event</th>
+            <th>Status</th>
+            <th>Snapshot</th>
+            <th>Distribution</th>
+            <th>Created</th>
+          </tr>
+        </thead>
+        <tbody id="rows">
+          <tr><td colspan="5" class="empty">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
-</header>
-
-<div id="banner"></div>
-
-<h2>Declare a new distribution</h2>
-<form class="trigger" onsubmit="declare(event)">
-  <label>
-    <span class="lbl">campaignId</span>
-    <input id="campaignId" readonly>
-  </label>
-  <label>
-    <span class="lbl">recordBlock <span style="text-transform: none; font-size: 10.5px;">(currentBlock − 32)</span></span>
-    <input id="recordBlock" type="number">
-  </label>
-  <label>
-    <span class="lbl">totalAmount (mUSDC base units)</span>
-    <input id="totalAmount" type="text" value="10000000000">
-  </label>
-  <button id="declare-btn" type="submit">Declare</button>
-</form>
-
-<h2>Campaigns</h2>
-<table class="campaigns" id="table">
-  <thead>
-    <tr>
-      <th>Campaign</th>
-      <th>Status</th>
-      <th>Snapshot</th>
-      <th>Distribution</th>
-      <th>Created</th>
-    </tr>
-  </thead>
-  <tbody id="rows">
-    <tr><td colspan="5" class="empty">Loading…</td></tr>
-  </tbody>
-</table>
 
 </div>
 
 <script>
 // ─── Constants ──────────────────────────────────────────────────────────
-const COMPOSE_BASE = "https://api.goldsky.com/api/admin/compose/v1/corporate-actions/tasks";
-const PIPELINES_BASE = "https://api.goldsky.com/api/v1/pipelines";
-const RPC = "https://mainnet.base.org";
+// All API calls go through Caddy on this same origin. Goldsky's CORS
+// policy allows the preflight from any origin but rejects the actual
+// request from fly.dev — proxying keeps everything same-origin from
+// the browser, with Caddy doing the cross-origin hop server-side.
+// COMPOSE_BASE is used by the `declare_campaign` HTTP trigger only.
+// The campaigns LIST is served by Postgres directly via /db/sql.
+const COMPOSE_BASE = "/goldsky/api/admin/compose/v1/corporate-actions/tasks";
+const PIPELINES_BASE = "/goldsky/api/v1/pipelines";
+const RPC = "/rpc";
 const CAMPAIGN_CONTRACT = "0x81051f77ea167b631Dd7F40ac414A9F9344Fb162";
 const SHARE_TOKEN_DEPLOY_BLOCK = 45363717;
 
@@ -239,16 +454,25 @@ async function readCampaignStruct(onChainId) {
   };
 }
 
-// ─── Compose: list campaigns ────────────────────────────────────────────
+// ─── Postgres: list campaigns ───────────────────────────────────────────
+// Query the compose app's `campaigns` collection directly. The collection
+// API stores rows as `(id text, value jsonb, ...)` — we just unwrap `value`.
+// Caddy injects the Neon connection string server-side so no DB credentials
+// land in the browser bundle.
 async function listCampaigns() {
-  const res = await fetch(`${COMPOSE_BASE}/list_campaigns`, {
+  const res = await fetch("/db/sql", {
     method: "POST",
-    headers: authHeaders(),
-    body: "{}",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      query: `SELECT value FROM campaigns
+                ORDER BY (value->>'createdAt')::bigint DESC
+                LIMIT 50`,
+      params: [],
+    }),
   });
-  if (!res.ok) throw new Error(`list_campaigns ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw new Error(`db ${res.status}: ${await res.text()}`);
   const j = await res.json();
-  return j.campaigns || [];
+  return (j.rows || []).map((r) => JSON.parse(r.value));
 }
 
 // ─── Compose: declare ───────────────────────────────────────────────────
@@ -273,7 +497,26 @@ async function declare(event) {
   } catch (err) {
     showBanner(err.message, "error");
   } finally {
-    btn.disabled = false; btn.textContent = "Declare";
+    btn.disabled = false; btn.textContent = "Declare event";
+  }
+}
+
+// ─── On-chain cache ─────────────────────────────────────────────────────
+// Keyed by onChainId. Once a campaign is fully paid (escrowRemaining=0)
+// the struct is terminal, so we cache it forever. For non-terminal
+// campaigns we keep the last value visible while a fresh read is in
+// flight — otherwise the cell flickers to "checking on-chain…" on every
+// 3s refresh tick.
+const onChainCache = new Map();
+async function getOnChain(onChainId) {
+  const cached = onChainCache.get(onChainId);
+  if (cached && cached.escrowRemaining === 0n) return cached;
+  try {
+    const fresh = await readCampaignStruct(onChainId);
+    if (fresh) onChainCache.set(onChainId, fresh);
+    return fresh || cached || null;
+  } catch {
+    return cached || null;
   }
 }
 
@@ -305,11 +548,11 @@ function statusPill(c) {
 function renderSnapshotCell(c, pipeState) {
   if (c.status === "snapshotting") {
     return `<div class="meta-row">${pipeState ? "pipeline " + pipeState : "polling…"}</div>
-            <div class="meta-row">target block ${fmt(c.recordBlock)}</div>`;
+            <div class="meta-row mono">target block ${fmt(c.recordBlock)}</div>`;
   }
   if (c.status === "paying" || c.status === "complete") {
-    return `<div class="meta-row">✓ snapshot at block ${fmt(c.recordBlock)}</div>
-            <div class="meta-row">snapshot took ~${
+    return `<div class="meta-row">Snapshot at block ${fmt(c.recordBlock)}</div>
+            <div class="meta-row mono">took ~${
               c.snapshotCompletedAt
                 ? Math.round((c.snapshotCompletedAt - c.createdAt) / 1000) + "s"
                 : "?"
@@ -337,8 +580,8 @@ function renderDistributionCell(c, onChain) {
 
   return `
     <div class="progress ${isDone ? "good" : ""}"><div class="bar" style="width:${pct}%"></div></div>
-    <div class="meta-row">${distributedUsdc} / ${totalUsdc} mUSDC distributed</div>
-    ${isDone ? '<div class="meta-row" style="color: var(--good);">✓ all paid</div>' : ""}
+    <div class="meta-row mono">${distributedUsdc} / ${totalUsdc} mUSDC</div>
+    ${isDone ? '<div class="meta-row" style="color: var(--good);">Settled in full</div>' : ""}
   `;
 }
 
@@ -349,9 +592,9 @@ function renderLinks(c) {
     : null;
   return `
     <div class="links">
-      ${declareTx ? `<a href="${declareTx}" target="_blank">declare tx</a>` : ""}
-      ${pipeline ? `<a href="${pipeline}" target="_blank">pipeline</a>` : ""}
-      <a href="https://basescan.org/address/${CAMPAIGN_CONTRACT}#events" target="_blank">on-chain events</a>
+      ${declareTx ? `<a href="${declareTx}" target="_blank">Declare tx</a>` : ""}
+      ${pipeline ? `<a href="${pipeline}" target="_blank">Pipeline</a>` : ""}
+      <a href="https://basescan.org/address/${CAMPAIGN_CONTRACT}#events" target="_blank">On-chain events</a>
     </div>
   `;
 }
@@ -368,7 +611,7 @@ async function refresh() {
 
   if (campaigns.length === 0) {
     document.getElementById("rows").innerHTML =
-      `<tr><td colspan="5" class="empty">No campaigns yet — declare one above.</td></tr>`;
+      `<tr><td colspan="5" class="empty">No distribution events yet — declare one above.</td></tr>`;
     return;
   }
 
@@ -379,7 +622,7 @@ async function refresh() {
         ? pipelineState(c.pipelineName).then(r => r.state)
         : Promise.resolve(null),
       c.onChainId && (c.status !== "snapshotting")
-        ? readCampaignStruct(c.onChainId).catch(() => null)
+        ? getOnChain(c.onChainId)
         : Promise.resolve(null),
     ]);
     return { c, pipeState, onChain };

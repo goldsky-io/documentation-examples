@@ -2,9 +2,50 @@
 	# Health check.
 	respond /healthz "ok" 200
 
+	# Proxy Goldsky's API through this origin. Their CORS policy allows
+	# the preflight from any origin but rejects actual requests from
+	# fly.dev — so we make all API calls same-origin from the browser
+	# and let Caddy do the cross-origin hop server-side.
+	handle_path /goldsky/* {
+		reverse_proxy https://api.goldsky.com {
+			header_up Host api.goldsky.com
+			header_up -Origin
+			header_up -Referer
+		}
+	}
+
+	# Base mainnet RPC via Goldsky's edge endpoint. Proxied so the secret
+	# stays out of the browser bundle, and so everything is same-origin.
+	# Chain ID 8453 = Base mainnet.
+	handle_path /rpc {
+		rewrite * /standard/evm/8453?secret=dbjOGsps6N9gMJTHq0ny6xsn8aENBc4j
+		reverse_proxy https://edge.goldsky.com {
+			header_up Host edge.goldsky.com
+			header_up -Origin
+			header_up -Referer
+		}
+	}
+
+	# Direct read access to the compose app's Neon DB. Caddy injects the
+	# connection string server-side so it never enters the browser bundle.
+	# Goldsky's compose app provisions one Neon DB per app; this is the
+	# corporate-actions DB, read-only by convention (the dashboard only SELECTs).
+	handle_path /db/sql {
+		reverse_proxy https://api.c-2.us-west-2.aws.neon.tech {
+			header_up Host api.c-2.us-west-2.aws.neon.tech
+			header_up Neon-Connection-String "postgresql://neondb_owner:npg_NICld5WhUBY1@ep-bitter-snow-afoherv9-pooler.c-2.us-west-2.aws.neon.tech:5432/CORPORATE_ACTIONS"
+			header_up Neon-Raw-Text-Output true
+			header_up Neon-Array-Mode false
+			header_up -Origin
+			header_up -Referer
+		}
+		rewrite * /sql
+	}
+
 	# Everything else: the dashboard.
-	# (Single-page demo; no need for routing.)
-	rewrite * /dashboard.html
-	root * /usr/share/caddy
-	file_server
+	handle {
+		rewrite * /dashboard.html
+		root * /usr/share/caddy
+		file_server
+	}
 }
