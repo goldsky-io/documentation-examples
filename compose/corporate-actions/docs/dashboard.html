@@ -230,7 +230,8 @@
     background: currentColor;
     opacity: 0.7;
   }
-  .pill.snapshotting { background: #fff7e6; color: #8a5a00; border-color: #f5dfa8; }
+  .pill.starting     { background: #e7f1fc; color: var(--accent); border-color: #b9d1f3; }
+  .pill.snapshotting { background: #e7f1fc; color: var(--accent); border-color: #b9d1f3; }
   .pill.paying       { background: #e7f1fc; color: var(--accent); border-color: #b9d1f3; }
   .pill.complete     { background: #e6f4ea; color: var(--good); border-color: #b8dcc1; }
   .pill.failed       { background: #fdecec; color: var(--bad); border-color: #f0bdba; }
@@ -476,14 +477,34 @@ async function listCampaigns() {
 }
 
 // ─── Compose: declare ───────────────────────────────────────────────────
+// In-flight declares: rows we render with status="starting" until the
+// server-side campaign row appears in listCampaigns(). Keyed by lowercased
+// userId/rowId so dedupe matches the server's casing.
+const pendingDeclares = new Map();
+
 async function declare(event) {
   event.preventDefault();
   const btn = document.getElementById("declare-btn");
   btn.disabled = true; btn.textContent = "Declaring…";
+  const campaignId  = document.getElementById("campaignId").value;
+  const recordBlock = Number(document.getElementById("recordBlock").value);
+  const totalAmount = document.getElementById("totalAmount").value.trim();
+
+  // Optimistic row: render immediately so the user sees feedback the
+  // moment they click. Cleared when the server-side campaign appears in
+  // the next listCampaigns() refresh.
+  const rowId = campaignId.toLowerCase();
+  pendingDeclares.set(rowId, {
+    rowId,
+    userId: rowId,
+    status: "starting",
+    totalAmount,
+    recordBlock: String(recordBlock),
+    createdAt: Date.now(),
+  });
+  refresh();
+
   try {
-    const campaignId  = document.getElementById("campaignId").value;
-    const recordBlock = Number(document.getElementById("recordBlock").value);
-    const totalAmount = document.getElementById("totalAmount").value.trim();
     const res = await fetch(`${COMPOSE_BASE}/declare_campaign`, {
       method: "POST",
       headers: authHeaders(),
@@ -495,7 +516,9 @@ async function declare(event) {
     seedNewCampaignId();
     refresh();
   } catch (err) {
+    pendingDeclares.delete(rowId);
     showBanner(err.message, "error");
+    refresh();
   } finally {
     btn.disabled = false; btn.textContent = "Declare event";
   }
@@ -506,7 +529,7 @@ async function declare(event) {
 // the struct is terminal, so we cache it forever. For non-terminal
 // campaigns we keep the last value visible while a fresh read is in
 // flight — otherwise the cell flickers to "checking on-chain…" on every
-// 3s refresh tick.
+// 1s refresh tick — snappy live demo experience.
 const onChainCache = new Map();
 async function getOnChain(onChainId) {
   const cached = onChainCache.get(onChainId);
@@ -546,6 +569,10 @@ function statusPill(c) {
 
 // ─── Render row ─────────────────────────────────────────────────────────
 function renderSnapshotCell(c, pipeState) {
+  if (c.status === "starting") {
+    return `<div class="meta-row">submitting on-chain…</div>
+            <div class="meta-row mono">target block ${fmt(c.recordBlock)}</div>`;
+  }
   if (c.status === "snapshotting") {
     return `<div class="meta-row">${pipeState ? "pipeline " + pipeState : "polling…"}</div>
             <div class="meta-row mono">target block ${fmt(c.recordBlock)}</div>`;
@@ -565,7 +592,7 @@ function renderSnapshotCell(c, pipeState) {
 }
 
 function renderDistributionCell(c, onChain) {
-  if (c.status === "snapshotting") return "—";
+  if (c.status === "starting" || c.status === "snapshotting") return "—";
 
   if (!onChain) return `<div class="meta-row">checking on-chain…</div>`;
 
@@ -608,6 +635,15 @@ async function refresh() {
     showBanner(err.message, "error");
     return;
   }
+
+  // Merge in optimistic "starting" rows that haven't shown up server-side
+  // yet. Once the server returns a campaign with the same id, drop the
+  // pending entry so we don't double-render.
+  const seen = new Set(campaigns.map(c => (c.rowId || c.userId || "").toLowerCase()));
+  for (const id of Array.from(pendingDeclares.keys())) {
+    if (seen.has(id)) pendingDeclares.delete(id);
+  }
+  campaigns = [...pendingDeclares.values(), ...campaigns];
 
   if (campaigns.length === 0) {
     document.getElementById("rows").innerHTML =
@@ -675,7 +711,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   // Re-fetch recordBlock periodically so the form is current.
   setInterval(seedRecordBlock, 30_000);
   // Refresh table every 3s.
-  setInterval(refresh, 3_000);
+  setInterval(refresh, 1_000);
 });
 </script>
 </body>

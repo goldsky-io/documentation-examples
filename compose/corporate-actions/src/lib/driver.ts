@@ -107,14 +107,17 @@ async function driveSnapshot(
 
     if ((sawTerminalState && haveRows) || looksAutoCleaned) {
       console.log(`[${campaign.userId}] snapshot completed → paying`);
-      await campaigns.setById(campaign.rowId, {
+      const updated: Campaign = {
         ...campaign,
         status: "paying",
         snapshotCompletedAt: Date.now(),
-      });
-      const fresh = (await campaigns.getById(campaign.rowId)) as
-        | unknown as Campaign | undefined;
-      if (fresh) await drivePayouts(context, campaigns, fresh);
+      };
+      await campaigns.setById(campaign.rowId, updated);
+      // Don't re-read from the collection here — same Neon pool-stickiness
+      // bug we hit on user tables means setById's write may not be visible
+      // to an immediate getById on the same connection. We have the new
+      // value in-memory; pass it through directly.
+      await drivePayouts(context, campaigns, updated);
       return;
     }
 
