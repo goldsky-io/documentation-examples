@@ -10,7 +10,7 @@ import {
 import { aggTableRowCount, dropCampaignTables, getHolders } from "./db";
 import { proRata } from "./math";
 import { deletePipeline, getPipelineState } from "./turbo";
-import type { Campaign, Payout } from "./types";
+import type { Campaign, Payout, PersistedPayout } from "./types";
 
 /**
  * Drive a single campaign through the snapshot → paying → complete state
@@ -159,6 +159,19 @@ async function drivePayouts(
   const totalSupply = holders.reduce((s, h) => s + h.balance, 0n);
   const payouts = proRata(holders, BigInt(campaign.totalAmount), totalSupply);
 
+  // Persist payouts onto the campaign row so the holder/amount table
+  // survives terminalCleanup (which drops the per-campaign Postgres
+  // table). The dashboard's drill-down reads this field.
+  if (!campaign.payouts) {
+    const persisted: PersistedPayout[] = payouts.map((p) => ({
+      holder: p.holder,
+      sharesAtSnapshot: p.sharesAtSnapshot.toString(),
+      amount: p.amount.toString(),
+    }));
+    campaign.payouts = persisted;
+    await campaigns.setById(campaign.rowId, campaign);
+  }
+
   const wallet = await context.evm.wallet({
     name: "corp-actions-operator",
     sponsorGas: true,
@@ -190,10 +203,32 @@ async function drivePayouts(
   // Bounded concurrency. Promise.allSettled so one revert doesn't break the
   // whole batch — the contract's `AlreadyPaid` guard means duplicates are
   // safe even when we're optimistic about parallel state.
+  const txByHolder = new Map<string, string>();
   for (let i = 0; i < unpaid.length; i += CONCURRENCY) {
     const batch = unpaid.slice(i, i + CONCURRENCY);
     console.log(`[${campaign.userId}] drivePayouts: sending batch ${batch.length}`);
-    await Promise.allSettled(batch.map((p) => payOne(wallet, chain, campaign, p)));
+    const results = await Promise.allSettled(
+      batch.map((p) => payOne(wallet, chain, campaign, p)),
+    );
+    results.forEach((res, idx) => {
+      if (res.status === "fulfilled" && res.value) {
+        txByHolder.set(batch[idx].holder.toLowerCase(), res.value);
+      }
+    });
+  }
+
+  // Stitch tx hashes back into the persisted payouts so the dashboard
+  // can deep-link each holder row to the actual pay() tx on basescan.
+  if (txByHolder.size && campaign.payouts) {
+    let mutated = false;
+    for (const p of campaign.payouts) {
+      const tx = txByHolder.get(p.holder.toLowerCase());
+      if (tx && !p.payTxHash) {
+        p.payTxHash = tx as `0x${string}`;
+        mutated = true;
+      }
+    }
+    if (mutated) await campaigns.setById(campaign.rowId, campaign);
   }
 
   console.log(`[${campaign.userId}] drivePayouts: batches done, checking escrow`);
@@ -206,9 +241,9 @@ async function payOne(
   chain: TaskContext["evm"]["chains"][keyof TaskContext["evm"]["chains"]],
   campaign: Campaign,
   { holder, amount, sharesAtSnapshot }: Payout,
-) {
+): Promise<string | null> {
   try {
-    await wallet.writeContract(
+    const { hash } = await wallet.writeContract(
       chain,
       CONFIG.campaignContract,
       "pay(bytes32,address,uint256,uint256)",
@@ -219,14 +254,16 @@ async function payOne(
         sharesAtSnapshot.toString(),
       ],
     );
+    return hash;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    if (/AlreadyPaid/.test(msg)) return;            // contract guard absorbed a race
+    if (/AlreadyPaid/.test(msg)) return null;       // contract guard absorbed a race
     if (/AlreadySealed|InsufficientEscrow/.test(msg)) {
       console.log(`[${campaign.userId}] terminal pay failure for ${holder}: ${msg}`);
-      return;
+      return null;
     }
     console.log(`[${campaign.userId}] transient pay failure for ${holder}: ${msg}`);
+    return null;
   }
 }
 

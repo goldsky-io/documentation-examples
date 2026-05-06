@@ -195,7 +195,63 @@
     color: var(--ink-soft);
   }
   table.campaigns tr:last-child td { border-bottom: none; }
-  table.campaigns tr:hover td { background: var(--paper-soft); }
+  table.campaigns tr.row { cursor: pointer; }
+  table.campaigns tr.row:hover td { background: var(--paper-soft); }
+  table.campaigns tr.row .chev {
+    display: inline-block;
+    width: 10px; height: 10px;
+    margin-right: 4px;
+    border-right: 1.5px solid var(--hint);
+    border-bottom: 1.5px solid var(--hint);
+    transform: rotate(-45deg);
+    transition: transform 0.15s ease;
+    vertical-align: 1px;
+  }
+  table.campaigns tr.row.expanded .chev { transform: rotate(45deg); }
+
+  /* Detail panel rendered as a row spanning all columns. */
+  table.campaigns tr.detail td {
+    background: var(--paper-soft);
+    padding: 14px 18px 16px 32px;
+  }
+  table.holders {
+    width: 100%; border-collapse: collapse; margin-top: 4px;
+    font: 12px/1.4 "Inter", system-ui, sans-serif;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+  }
+  table.holders th {
+    text-align: left; padding: 8px 10px;
+    font: 600 10.5px/1 "Inter", system-ui, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--hint);
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper-soft);
+  }
+  table.holders td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: middle;
+  }
+  table.holders tr:last-child td { border-bottom: none; }
+  table.holders .addr {
+    font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  table.holders .num {
+    font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
+    text-align: right;
+  }
+  table.holders .tx-link { font-size: 11.5px; }
+  .detail-empty { color: var(--hint); font-size: 12px; padding: 4px 0; }
+  .detail-meta {
+    display: flex; gap: 18px; margin-bottom: 10px;
+    font: 11px/1.5 "Inter", system-ui, sans-serif;
+    color: var(--hint);
+  }
+  .detail-meta a { color: var(--accent); text-decoration: none; }
+  .detail-meta a:hover { text-decoration: underline; }
   table.campaigns .id {
     font: 12px/1.4 ui-monospace, "SF Mono", Menlo, monospace;
     color: var(--ink);
@@ -667,6 +723,13 @@ function renderLinks(c) {
 let cachedCampaigns = [];
 const cachedEnrich = new Map();
 
+// Drill-down state.
+//   expandedRows:  rowIds whose detail panel is open
+//   holdersCache:  rowId → list-holders response (cached so refresh ticks
+//                  don't refetch on every iteration; keyed by rowId)
+const expandedRows = new Set();
+const holdersCache = new Map();
+
 function renderRows() {
   // Drop any pending rows that have shown up server-side.
   const seen = new Set(cachedCampaigns.map(c => (c.rowId || c.userId || "").toLowerCase()));
@@ -683,11 +746,15 @@ function renderRows() {
   }
 
   tbody.innerHTML = all.map((c) => {
-    const e = cachedEnrich.get((c.rowId || c.userId || "").toLowerCase()) || {};
-    return `
-      <tr>
+    const rowId = (c.rowId || c.userId || "").toLowerCase();
+    const e = cachedEnrich.get(rowId) || {};
+    const isExpanded = expandedRows.has(rowId);
+    const isPending = pendingDeclares.has(rowId);
+    const mainRow = `
+      <tr class="row ${isExpanded ? "expanded" : ""}" data-rowid="${rowId}">
         <td>
-          <div class="id">${shortId(c.userId || c.rowId)}</div>
+          <span class="chev"></span>
+          <span class="id">${shortId(c.userId || c.rowId)}</span>
           ${renderLinks(c)}
         </td>
         <td>${statusPill(c)}</td>
@@ -696,7 +763,118 @@ function renderRows() {
         <td><div class="meta-row">${ago(c.createdAt)}</div></td>
       </tr>
     `;
+    const detailRow = isExpanded
+      ? `<tr class="detail"><td colspan="5">${renderDetail(c, isPending)}</td></tr>`
+      : "";
+    return mainRow + detailRow;
   }).join("");
+}
+
+// ─── Detail panel ───────────────────────────────────────────────────────
+function renderDetail(c, isPending) {
+  const rowId = (c.rowId || c.userId || "").toLowerCase();
+  if (isPending) {
+    return `<div class="detail-empty">Declaration submitting on-chain — holders will appear once the snapshot pipeline finishes.</div>`;
+  }
+  if (c.status === "snapshotting") {
+    return `<div class="detail-empty">Snapshotting in progress — pipeline is indexing Transfer events.</div>`;
+  }
+  const cached = holdersCache.get(rowId);
+  if (!cached) {
+    return `<div class="detail-empty">Loading holder breakdown…</div>`;
+  }
+  if (!cached.holders || cached.holders.length === 0) {
+    return `<div class="detail-empty">No holders persisted on this campaign yet.</div>`;
+  }
+
+  const totalUsdc = cached.totalAmount
+    ? (Number(cached.totalAmount) / 1e6).toLocaleString()
+    : "?";
+  const totalShares = cached.holders.reduce(
+    (s, h) => s + BigInt(h.sharesAtSnapshot || 0n),
+    0n,
+  );
+
+  const meta = `
+    <div class="detail-meta">
+      <span>${cached.holders.length} holder${cached.holders.length === 1 ? "" : "s"}</span>
+      <span>· total ${totalUsdc} mUSDC</span>
+      ${cached.shareToken ? `<span>· <a href="https://basescan.org/token/${cached.shareToken}" target="_blank">Share token</a></span>` : ""}
+      ${cached.payToken ? `<span>· <a href="https://basescan.org/token/${cached.payToken}" target="_blank">Pay token</a></span>` : ""}
+      <span>· <a href="https://basescan.org/address/${CAMPAIGN_CONTRACT}#events" target="_blank">Campaign events</a></span>
+    </div>
+  `;
+
+  const rows = cached.holders.map((h) => {
+    const shares = BigInt(h.sharesAtSnapshot || "0");
+    const amount = BigInt(h.amount || "0");
+    const sharesPretty = (Number(shares) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 4 });
+    const amountPretty = (Number(amount) / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const pct = totalShares > 0n ? (Number(shares * 10000n / totalShares) / 100).toFixed(2) : "0.00";
+    const txCell = h.payTxHash
+      ? `<a class="tx-link" href="https://basescan.org/tx/${h.payTxHash}" target="_blank">View pay() tx</a>`
+      : `<span class="tx-link" style="color: var(--hint);">—</span>`;
+    return `
+      <tr>
+        <td><a class="addr" href="https://basescan.org/address/${h.holder}" target="_blank">${shortId(h.holder)}</a></td>
+        <td class="num">${sharesPretty}</td>
+        <td class="num">${pct}%</td>
+        <td class="num">${amountPretty} mUSDC</td>
+        <td>${txCell}</td>
+      </tr>
+    `;
+  }).join("");
+
+  return meta + `
+    <table class="holders">
+      <thead>
+        <tr>
+          <th>Holder</th>
+          <th class="num">Shares at snapshot</th>
+          <th class="num">% of supply</th>
+          <th class="num">Paid</th>
+          <th>Tx</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+// ─── Fetch & cache holders when a row is expanded ──────────────────────
+async function loadHolders(rowId) {
+  try {
+    const res = await fetch(`${COMPOSE_BASE}/list_holders`, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify({ campaignId: rowId }),
+    });
+    if (!res.ok) throw new Error(`list_holders ${res.status}: ${await res.text()}`);
+    const j = await res.json();
+    holdersCache.set(rowId, j);
+    renderRows();
+  } catch (err) {
+    showBanner(err.message, "error");
+  }
+}
+
+// Click delegation on the table — toggle expand on row click. Anchors (<a>)
+// inside the row keep their normal navigation behavior.
+function onTableClick(event) {
+  if (event.target.closest("a")) return; // let links do their thing
+  const tr = event.target.closest("tr.row");
+  if (!tr) return;
+  const rowId = tr.dataset.rowid;
+  if (!rowId) return;
+  if (expandedRows.has(rowId)) {
+    expandedRows.delete(rowId);
+  } else {
+    expandedRows.add(rowId);
+    // Trigger a fetch only if we don't already have holders cached. Refresh
+    // ticks will re-fetch via the refresh() loop below.
+    if (!holdersCache.has(rowId)) loadHolders(rowId);
+  }
+  renderRows();
 }
 
 async function refresh() {
@@ -722,6 +900,20 @@ async function refresh() {
     ]);
     cachedEnrich.set((c.rowId || c.userId || "").toLowerCase(), { pipeState, onChain });
   }));
+
+  // Refetch holders for expanded rows whose campaign hasn't finished —
+  // payouts get persisted on the snapshot→paying transition and tx hashes
+  // are stitched in after each batch, so we want fresh data while the
+  // campaign is in motion. Once status=complete, the snapshot is final
+  // and the cached value is fine.
+  for (const rowId of expandedRows) {
+    const c = campaigns.find(x => (x.rowId || x.userId || "").toLowerCase() === rowId);
+    const cached = holdersCache.get(rowId);
+    const isTerminal = c && (c.status === "complete" || c.status === "failed");
+    if (!c) continue;
+    const haveAllTxHashes = cached?.holders?.every(h => h.payTxHash);
+    if (!isTerminal || !haveAllTxHashes) loadHolders(rowId);
+  }
 
   renderRows();
 }
@@ -755,10 +947,12 @@ window.addEventListener("DOMContentLoaded", async () => {
     "https://basescan.org/address/0x22576074544e189856Aa000fc0E5CF00b2eFF3b9";
   document.getElementById("operator-link").textContent = "0x2257…F3b9";
 
+  document.getElementById("table").addEventListener("click", onTableClick);
+
   await refresh();
   // Re-fetch recordBlock periodically so the form is current.
   setInterval(seedRecordBlock, 30_000);
-  // Refresh table every 3s.
+  // Refresh table every 1s.
   setInterval(refresh, 1_000);
 });
 </script>

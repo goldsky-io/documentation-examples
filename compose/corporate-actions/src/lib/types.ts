@@ -39,6 +39,18 @@ export interface Campaign {
   completedAt?: number;
   failedAt?: number;
   failureReason?: string;
+  // Persisted payouts so the holder/amount table survives terminalCleanup
+  // (which drops the per-campaign Postgres tables). Populated when the
+  // driver transitions to "paying" and the pro-rata is computed; bigints
+  // serialised as decimal strings so the row round-trips through JSON.
+  payouts?: PersistedPayout[];
+}
+
+export interface PersistedPayout {
+  holder: Hex;
+  sharesAtSnapshot: string;  // bigint as text
+  amount: string;            // bigint as text (USDC, 6 decimals)
+  payTxHash?: Hex;           // captured per-batch in drivePayouts
 }
 
 export interface Holder {
