@@ -123,10 +123,15 @@ export async function aggTableRowCount(
   try {
     const rows = await neonQuery(
       ctx,
-      `SELECT count(*)::text AS n FROM "${aggTable}"`,
+      `SELECT count(*)::text AS n,
+              current_database() AS db,
+              inet_server_addr()::text AS host
+         FROM "${aggTable}"`,
     );
     const n = Number(rows[0]?.n ?? 0);
-    console.log(`[db] count("${aggTable}") = ${n}`);
+    const db = rows[0]?.db;
+    const host = rows[0]?.host;
+    console.log(`[db] count("${aggTable}") = ${n} (db=${db} host=${host})`);
     return n;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
