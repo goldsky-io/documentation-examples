@@ -1,17 +1,29 @@
 #!/usr/bin/env bash
-# Deploy MockUSDC + ShareToken + DistributionCampaign to Base mainnet.
+# Deploy contracts to Base mainnet.
 #
 # Usage:
-#   PRIVATE_KEY=0x... ./scripts/deploy.sh
+#   PRIVATE_KEY=0x... ./scripts/deploy.sh                  # all three (initial setup)
+#   PRIVATE_KEY=0x... ./scripts/deploy.sh share-token      # ShareToken only (re-seed holders)
 #
-# Outputs each address to stdout in a `KEY=value` block. Copy them into
-# src/lib/constants.ts and re-deploy the compose app.
+# In `all` mode, deploys MockUSDC + ShareToken + DistributionCampaign.
+# In `share-token` mode, deploys only ShareToken — pre-mints to whatever
+# distribution `seed-holders.json` currently contains. Use this when you
+# want to refresh the holder distribution without touching the campaign
+# contract or the pay-token. The script prints the new address AND the
+# block it was deployed at, both of which need to land in
+# src/lib/constants.ts (shareToken + shareTokenDeployBlock).
 #
 # Defaults can be overridden:
 #   RPC_URL=...                  (default: https://mainnet.base.org)
 #   HOLDERS_FILE=...             (default: scripts/seed-holders.json)
 
 set -euo pipefail
+
+MODE="${1:-all}"
+case "$MODE" in
+  all|share-token) ;;
+  *) echo "Unknown mode: $MODE (expected 'all' or 'share-token')" >&2; exit 1 ;;
+esac
 
 if [[ -z "${PRIVATE_KEY:-}" ]]; then
   echo "PRIVATE_KEY env var required (deployer wallet, must hold a small amount of ETH on Base)" >&2
@@ -34,17 +46,17 @@ HOLDERS_ARG="$(jq -r '"[" + ([.holders[].address] | join(",")) + "]"' "$ROOT_DIR
 AMOUNTS_ARG="$(jq -r '"[" + ([.holders[].amount] | join(",")) + "]"' "$ROOT_DIR/$HOLDERS_FILE")"
 COUNT="$(jq -r '.holders | length' "$ROOT_DIR/$HOLDERS_FILE")"
 echo "ShareToken pre-mint: $COUNT holders"
-
-echo "Deploying to $RPC_URL ..."
+echo "Deploying to $RPC_URL (mode: $MODE) ..."
 echo
 
+# deploy <contract> [extra forge args...]
+# Echoes "<address>|<txhash>" to stdout. Mirrors forge output to stderr
+# so the user sees progress without contaminating capture.
 deploy() {
   local contract="$1"
   shift
   local logfile
   logfile="$(mktemp)"
-  # Mirror forge's output to the user's stdout AND a temp log we can grep,
-  # avoiding pipefail/SIGPIPE issues when capturing inside $().
   forge create "$contract" \
     --rpc-url "$RPC_URL" \
     --private-key "$PRIVATE_KEY" \
@@ -52,33 +64,69 @@ deploy() {
     --root "$ROOT_DIR" \
     "$@" \
     | tee "$logfile" >&2
-  local addr
+  local addr txhash
   addr="$(awk '/^Deployed to:/ { print $3; exit }' "$logfile")"
+  txhash="$(awk '/^Transaction hash:/ { print $3; exit }' "$logfile")"
   rm -f "$logfile"
   if [[ -z "$addr" ]]; then
     echo "deploy of $contract did not report a deployed address" >&2
     exit 1
   fi
-  echo "$addr"
+  echo "${addr}|${txhash}"
 }
 
-USDC_ADDR="$(deploy contracts/MockUSDC.sol:MockUSDC)"
+# Look up the block number a tx landed in. Used to set
+# shareTokenDeployBlock so the snapshot pipeline's filter can prune
+# pre-deploy blocks.
+block_of() {
+  local txhash="$1"
+  cast receipt "$txhash" --rpc-url "$RPC_URL" --json \
+    | jq -r '.blockNumber' \
+    | python3 -c 'import sys; print(int(sys.stdin.read().strip(), 0))'
+}
+
+if [[ "$MODE" == "share-token" ]]; then
+  IFS='|' read -r SHARE_ADDR SHARE_TX <<<"$(deploy contracts/ShareToken.sol:ShareToken \
+    --constructor-args "$HOLDERS_ARG" "$AMOUNTS_ARG")"
+  SHARE_BLOCK="$(block_of "$SHARE_TX")"
+  echo
+  echo "ShareToken=$SHARE_ADDR"
+  echo "shareTokenDeployBlock=$SHARE_BLOCK"
+  echo
+  echo "Update src/lib/constants.ts with:"
+  cat <<EOF
+
+  shareToken:            "$SHARE_ADDR" as Hex,
+  shareTokenDeployBlock: $SHARE_BLOCK,
+
+EOF
+  echo "Then redeploy the compose app:"
+  echo "  goldsky compose deploy -t cmlvmcgu3c5kz01z07szaagyb"
+  exit 0
+fi
+
+# --- all mode: deploy MockUSDC + ShareToken + DistributionCampaign ---
+
+IFS='|' read -r USDC_ADDR _ <<<"$(deploy contracts/MockUSDC.sol:MockUSDC)"
 echo "MockUSDC=$USDC_ADDR"
 
-SHARE_ADDR="$(deploy contracts/ShareToken.sol:ShareToken \
+IFS='|' read -r SHARE_ADDR SHARE_TX <<<"$(deploy contracts/ShareToken.sol:ShareToken \
   --constructor-args "$HOLDERS_ARG" "$AMOUNTS_ARG")"
+SHARE_BLOCK="$(block_of "$SHARE_TX")"
 echo "ShareToken=$SHARE_ADDR"
+echo "shareTokenDeployBlock=$SHARE_BLOCK"
 
-CAMPAIGN_ADDR="$(deploy contracts/DistributionCampaign.sol:DistributionCampaign)"
+IFS='|' read -r CAMPAIGN_ADDR _ <<<"$(deploy contracts/DistributionCampaign.sol:DistributionCampaign)"
 echo "DistributionCampaign=$CAMPAIGN_ADDR"
 
 echo
 echo "Update src/lib/constants.ts with:"
 cat <<EOF
 
-  payToken:         "$USDC_ADDR" as Hex,
-  shareToken:       "$SHARE_ADDR" as Hex,
-  campaignContract: "$CAMPAIGN_ADDR" as Hex,
+  payToken:              "$USDC_ADDR" as Hex,
+  shareToken:            "$SHARE_ADDR" as Hex,
+  campaignContract:      "$CAMPAIGN_ADDR" as Hex,
+  shareTokenDeployBlock: $SHARE_BLOCK,
 
 EOF
 
