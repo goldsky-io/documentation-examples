@@ -230,7 +230,7 @@
     background: currentColor;
     opacity: 0.7;
   }
-  .pill.starting     { background: #e7f1fc; color: var(--accent); border-color: #b9d1f3; }
+  .pill.starting     { background: #fff7e6; color: #8a5a00; border-color: #f5dfa8; }
   .pill.snapshotting { background: #e7f1fc; color: var(--accent); border-color: #b9d1f3; }
   .pill.paying       { background: #e7f1fc; color: var(--accent); border-color: #b9d1f3; }
   .pill.complete     { background: #e6f4ea; color: var(--good); border-color: #b8dcc1; }
@@ -592,7 +592,9 @@ function renderSnapshotCell(c, pipeState) {
 }
 
 function renderDistributionCell(c, onChain) {
-  if (c.status === "starting" || c.status === "snapshotting") return "—";
+  if (c.status === "starting" || c.status === "snapshotting") {
+    return `<div class="meta-row mono">${elapsedLabel(c)}</div>`;
+  }
 
   if (!onChain) return `<div class="meta-row">checking on-chain…</div>`;
 
@@ -608,8 +610,23 @@ function renderDistributionCell(c, onChain) {
   return `
     <div class="progress ${isDone ? "good" : ""}"><div class="bar" style="width:${pct}%"></div></div>
     <div class="meta-row mono">${distributedUsdc} / ${totalUsdc} mUSDC</div>
-    ${isDone ? '<div class="meta-row" style="color: var(--good);">Settled in full</div>' : ""}
+    ${isDone
+      ? `<div class="meta-row" style="color: var(--good);">Settled in full · ${elapsedLabel(c)}</div>`
+      : `<div class="meta-row mono">${elapsedLabel(c)}</div>`}
   `;
+}
+
+// End-to-end elapsed time from createdAt to completion (or now, if in-flight).
+function elapsedLabel(c) {
+  if (!c.createdAt) return "";
+  const end = c.completedAt ?? c.failedAt ?? Date.now();
+  const seconds = Math.max(0, Math.round((end - c.createdAt) / 1000));
+  const verb = c.status === "complete" ? "completed in"
+             : c.status === "failed"   ? "failed after"
+             : "elapsed";
+  return c.status === "complete" || c.status === "failed"
+    ? `${verb} ${seconds}s`
+    : `${seconds}s ${verb}`;
 }
 
 function renderLinks(c) {
