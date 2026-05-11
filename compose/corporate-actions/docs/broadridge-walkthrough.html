@@ -142,7 +142,7 @@
 <header>
   <div class="eyebrow">Compose · Turbo · Mechanics Brief</div>
   <h1>Corporate-Actions Distributor: how it actually runs</h1>
-  <p class="sub">What the components are, what runs when, and where the guarantees come from. Compose orchestrates Turbo as an ephemeral, on-demand subroutine. Live on Base mainnet.</p>
+  <p class="sub">What the components are, what runs when, and where the guarantees come from. Compose orchestrates Turbo as an ephemeral, on-demand subroutine — one HTTP call drives the entire declare → snapshot → pay lifecycle. Live on Base mainnet.</p>
 </header>
 
 <h2>The pieces</h2>
@@ -151,7 +151,7 @@
   <div class="comp">
     <div class="role">On-chain</div>
     <div class="name">DistributionCampaign.sol</div>
-    Holds USDC escrow. <code>declare()</code> pulls funds and records the operator's chosen <code>recordBlock</code>; <code>pay()</code> releases per holder; <code>paid[id][holder]</code> map prevents double-pay.
+    Holds USDC escrow. <code>declare()</code> pulls funds and records the operator's chosen <code>recordBlock</code>; <code>pay()</code> releases per holder; <code>paid[id][holder]</code> map prevents double-pay; <code>escrowRemaining</code> goes to zero when every holder has been paid.
   </div>
   <div class="comp">
     <div class="role">On-chain</div>
@@ -161,12 +161,12 @@
   <div class="comp">
     <div class="role">Compose · 1 app</div>
     <div class="name">corporate-actions</div>
-    Two TypeScript tasks: <code>declare_campaign</code> (HTTP) and <code>process_campaigns</code> (cron · 1 min). Drives the lifecycle for every campaign.
+    Two TypeScript HTTP tasks: <code>declare_campaign</code> drives the full lifecycle in a single request; <code>list_holders</code> serves the dashboard's drill-down view.
   </div>
   <div class="comp">
     <div class="role">Turbo · 1 per campaign</div>
     <div class="name">corp-actions-&lt;id&gt;</div>
-    Job-mode pipeline. Spawned by compose at declare time; bounded by <code>end_block: recordBlock</code>; backfills, flushes the snapshot, exits. Compose deletes it on terminal.
+    Job-mode pipeline. Spawned by compose at declare time; bounded by a filter-level block range from the share token's deploy block up to <code>recordBlock</code>; backfills, flushes the snapshot, exits. Compose deletes it on terminal.
   </div>
 </div>
 
@@ -203,7 +203,7 @@
   <rect class="box" x="40" y="34" width="260" height="80" rx="6"/>
   <text class="role"  x="56" y="54">ERC-20</text>
   <text class="title" x="56" y="74">ShareToken</text>
-  <text class="sub"   x="56" y="92">10 holders, pre-minted</text>
+  <text class="sub"   x="56" y="92">25 holders, long-tailed distribution</text>
   <text class="mono"  x="56" y="107">emits Transfer(from, to, value)</text>
 
   <!-- DistributionCampaign -->
@@ -211,7 +211,7 @@
   <text class="role"  x="476" y="54">Solidity</text>
   <text class="title" x="476" y="74">DistributionCampaign</text>
   <text class="sub"   x="476" y="92">USDC escrow + paid map</text>
-  <text class="mono"  x="476" y="107">declare() · pay() · isPaid()</text>
+  <text class="mono"  x="476" y="107">declare() · pay() · escrowRemaining</text>
 
   <!-- OFF-CHAIN LANE -->
   <text class="laneTxt" x="14" y="160">Off-chain orchestration</text>
@@ -225,17 +225,17 @@
     <rect class="box sub" x="56" y="232" width="150" height="92" rx="4"/>
     <text class="role" x="68" y="248">HTTP</text>
     <text class="title" x="68" y="265" font-size="12">declare_campaign</text>
-    <text class="sub"   x="68" y="282" font-size="11">approves USDC,</text>
-    <text class="sub"   x="68" y="296" font-size="11">declares on-chain,</text>
-    <text class="sub"   x="68" y="310" font-size="11">spawns pipeline</text>
+    <text class="sub"   x="68" y="282" font-size="11">declares on-chain,</text>
+    <text class="sub"   x="68" y="296" font-size="11">spawns + drives</text>
+    <text class="sub"   x="68" y="310" font-size="11">pipeline inline</text>
 
-    <!-- process task -->
+    <!-- list_holders task -->
     <rect class="box sub" x="216" y="232" width="150" height="92" rx="4"/>
-    <text class="role" x="228" y="248">CRON · 1m</text>
-    <text class="title" x="228" y="265" font-size="12">process_campaigns</text>
-    <text class="sub"   x="228" y="282" font-size="11">polls /state · 5s,</text>
-    <text class="sub"   x="228" y="296" font-size="11">pays holders,</text>
-    <text class="sub"   x="228" y="310" font-size="11">deletes pipeline</text>
+    <text class="role" x="228" y="248">HTTP</text>
+    <text class="title" x="228" y="265" font-size="12">list_holders</text>
+    <text class="sub"   x="228" y="282" font-size="11">reads persisted</text>
+    <text class="sub"   x="228" y="296" font-size="11">payouts for</text>
+    <text class="sub"   x="228" y="310" font-size="11">dashboard drill-down</text>
 
   <!-- Turbo job-mode pipeline (ephemeral, dashed border) -->
   <rect class="box eph" x="420" y="180" width="300" height="160" rx="6"/>
@@ -243,8 +243,8 @@
   <text class="title" x="436" y="218">corp-actions-&lt;id&gt;</text>
   <text class="sub"   x="436" y="240" font-size="11.5">job: true · resource_size: s</text>
   <text class="mono"  x="436" y="262" font-size="10.5">source: base.erc20_transfers</text>
-  <text class="mono"  x="436" y="278" font-size="10.5">filter: lower(address) = ...</text>
-  <text class="mono"  x="436" y="294" font-size="10.5">end_block: recordBlock</text>
+  <text class="mono"  x="436" y="278" font-size="10.5">filter: address = shareToken</text>
+  <text class="mono"  x="436" y="294" font-size="10.5">    AND block BETWEEN d AND r</text>
   <text class="sub"   x="436" y="316" font-size="11.5">Backfill → flush → completed → exit</text>
 
   <!-- DB LANE -->
@@ -255,12 +255,12 @@
   <rect class="box db" x="120" y="430" width="520" height="120" rx="6"/>
   <text class="role"  x="136" y="450">Auto-provisioned by Compose · CORPORATE_ACTIONS secret points Turbo at it</text>
   <text class="title" x="136" y="472">Hosted Neon Postgres</text>
-  <text class="mono"  x="136" y="495">share_balances_&lt;id&gt;       (per-campaign agg table)</text>
-  <text class="mono"  x="136" y="513">share_transfer_log_&lt;id&gt;   (per-campaign landing, dropped on terminal)</text>
-  <text class="mono"  x="136" y="531">compose_collection_campaigns  (campaign state machine)</text>
+  <text class="mono"  x="136" y="495">share_balances_&lt;id&gt;       (per-campaign Transfer landing table)</text>
+  <text class="mono"  x="136" y="513">compose_collection_campaigns  (campaign state + persisted payouts)</text>
+  <text class="mono"  x="136" y="531">                              (drives dashboard drill-down post-cleanup)</text>
 
   <!-- ARROWS -->
-  <!-- 1. ShareToken Transfer events ▸ Turbo (left vertical, but Turbo is on the right; route from token-bottom to pipeline-top) -->
+  <!-- 1. ShareToken Transfer events ▸ Turbo -->
   <path class="arrow" d="M 200 114 C 200 145 380 160 500 180" marker-end="url(#arr)"/>
   <text class="arrowLbl" x="220" y="148">indexes Transfer(...)</text>
 
@@ -269,27 +269,27 @@
   <text class="arrowLbl" x="140" y="178">approve + declare()</text>
 
   <!-- 3. declare_campaign ▸ Turbo (right) -->
-  <path class="arrow" d="M 206 278 L 420 278" marker-end="url(#arr)"/>
-  <text class="arrowLbl" x="225" y="271">POST /pipelines</text>
+  <path class="arrow" d="M 206 264 L 420 264" marker-end="url(#arr)"/>
+  <text class="arrowLbl" x="225" y="257">POST /pipelines</text>
 
-  <!-- 4. process_campaigns ◀ Turbo (left, polling) -->
-  <path class="arrow" d="M 420 256 L 366 256" marker-end="url(#arr)"/>
-  <text class="arrowLbl" x="372" y="248" text-anchor="end">GET /state · 5s</text>
+  <!-- 4. declare_campaign ◀ Turbo (poll, left) -->
+  <path class="arrow" d="M 420 290 L 206 290" marker-end="url(#arr)"/>
+  <text class="arrowLbl" x="225" y="305">GET /state · 2s</text>
 
   <!-- 5. Turbo ▸ Postgres (down) -->
   <path class="arrow" d="M 570 340 L 570 430" marker-end="url(#arr)"/>
   <text class="arrowLbl" x="580" y="385">writes share_balances_&lt;id&gt;</text>
 
-  <!-- 6. Compose ▸ Postgres (down, reads + writes campaigns collection) -->
+  <!-- 6. Compose ▸ Postgres (down, reads + writes) -->
   <path class="arrow" d="M 220 340 L 220 430" marker-end="url(#arr)"/>
   <text class="arrowLbl" x="40" y="385">reads holders + writes campaigns</text>
 
-  <!-- 7. process_campaigns ▸ DistributionCampaign (up, pays) -->
+  <!-- 7. declare_campaign ▸ DistributionCampaign (up, pays) -->
   <path class="arrow" d="M 320 232 C 320 180 600 132 600 114" marker-end="url(#arr)"/>
   <text class="arrowLbl" x="610" y="178">pay() per holder</text>
 </svg>
 
-<p>Key point: the Turbo pipeline only exists while a campaign is being snapshotted. Compose creates it, polls it, deletes it. No always-on indexing, no manual pipeline lifecycle to manage.</p>
+<p>Key point: the Turbo pipeline only exists while a campaign is being snapshotted. <code>declare_campaign</code> creates it, polls it, drives the payouts, and deletes it — all inside a single HTTP request. No always-on indexing, no cron handoff, no manual pipeline lifecycle to manage.</p>
 
 <h2>The flow, in order</h2>
 
@@ -298,43 +298,43 @@
 <div class="step">
   <div class="n">1</div>
   <div class="who">Issuer</div>
-  <div class="what">Deploys <code>ShareToken</code>. Constructor pre-mints to the 10 demo holders → 10 <code>Transfer(0x0 → holder)</code> events in the deploy block. (For a real share token, you skip this step.)</div>
+  <div class="what">Deploys <code>ShareToken</code>. Constructor pre-mints to the demo holder set (25 addresses, long-tailed amounts) → 25 <code>Transfer(0x0 → holder)</code> events in the deploy block. (For a real share token, you skip this step.)</div>
 </div>
 
 <div class="step">
   <div class="n">2</div>
   <div class="who">Operator</div>
-  <div class="what"><code>POST /tasks/declare_campaign</code> with <code>{campaignId, recordBlock, totalAmount}</code>. The HTTP task validates <code>recordBlock &le; currentBlock</code>, then: (a) <code>USDC.approve(campaignContract, totalAmount)</code>, (b) <code>DistributionCampaign.declare(...)</code> which atomically pulls escrow, (c) <code>POST /api/v1/pipelines</code> to spawn a job-mode Turbo pipeline filtered to <code>shareToken</code> with <code>end_block: recordBlock</code>, (d) inserts a campaign row at <code>status: "snapshotting"</code>.</div>
+  <div class="what"><code>POST /tasks/declare_campaign</code> with <code>{campaignId, recordBlock, totalAmount}</code>. The task validates <code>recordBlock &le; currentBlock</code>, then: (a) <code>USDC.approve(campaignContract, totalAmount)</code>, (b) <code>DistributionCampaign.declare(...)</code> which atomically pulls escrow, (c) <code>POST /api/v1/pipelines</code> to spawn a job-mode Turbo pipeline filtered to <code>shareToken</code> over <code>block_number BETWEEN deployBlock AND recordBlock</code>, (d) inserts a campaign row at <code>status: "snapshotting"</code>.</div>
 </div>
 
 <div class="step">
   <div class="n">3</div>
   <div class="who">Turbo</div>
-  <div class="what">The pipeline backfills <code>base.erc20_transfers</code>, source-level filter on the share token (Fast Scan: the dataset returns only matching rows, not the whole chain). Decodes via the dataset schema, emits credit/debit deltas via SQL <code>UNION ALL</code>. The <code>postgres_aggregate</code> sink rolls deltas into <code>share_balances_&lt;id&gt;</code>. When it hits <code>end_block</code>, Turbo flushes the final checkpoint and transitions to <code>completed</code>.</div>
+  <div class="what">The pipeline backfills <code>base.erc20_transfers</code> bounded by the filter's block range — the planner prunes everything before the deploy block and after the record block, so the scan only touches the window the share token has actually existed in. The <code>postgres</code> sink lands raw Transfer rows in <code>share_balances_&lt;id&gt;</code>. When the bounded scan finishes, Turbo flushes the final checkpoint and the deployment exits.</div>
 </div>
 
 <div class="step">
   <div class="n">4</div>
-  <div class="who">Compose cron</div>
-  <div class="what">Every minute. For each non-terminal campaign: polls <code>GET /api/v1/pipelines/&lt;name&gt;/state</code> every 5 seconds (up to 30 polls per tick). On <code>completed</code> → flips to <code>status: "paying"</code>, drives the first payment tick immediately. On <code>error</code> → flips to <code>failed</code>, deletes the pipeline, drops the per-campaign tables.</div>
+  <div class="who">declare_campaign</div>
+  <div class="what">Same request, still running. Polls <code>GET /api/v1/pipelines/&lt;name&gt;/state</code> every 2 seconds. On <code>completed</code> (or the auto-cleanup 404 that follows a successful job-mode run, paired with rows actually present in the agg table) → flips the campaign to <code>status: "paying"</code> and continues. On <code>error</code> → flips to <code>failed</code>, deletes the pipeline, drops the per-campaign tables.</div>
 </div>
 
 <div class="step">
   <div class="n">5</div>
-  <div class="who">Compose cron</div>
-  <div class="what">Reads the snapshot from <code>share_balances_&lt;id&gt;</code>. Pro-rata: each holder gets <code>floor(balance × totalAmount / totalSupply)</code>; the floor remainder is assigned to the last holder so the sum equals <code>totalAmount</code> exactly.</div>
+  <div class="who">declare_campaign</div>
+  <div class="what">Reads the snapshot from <code>share_balances_&lt;id&gt;</code> via a SQL aggregate (credits to recipients, debits from senders, summed per account). Pro-rata: each holder gets <code>floor(balance × totalAmount / totalSupply)</code>; the floor remainder is assigned to the last holder so the sum equals <code>totalAmount</code> exactly. Persists the full payouts list (holder, shares, amount) onto the campaign row so the dashboard's drill-down survives the per-campaign table cleanup.</div>
 </div>
 
 <div class="step">
   <div class="n">6</div>
-  <div class="who">Compose cron</div>
-  <div class="what">For each holder: <code>readContract(isPaid(id, holder))</code>. If true, skip. If false, <code>writeContract(pay(id, holder, amount, sharesAtSnapshot))</code> via the Privy-managed operator wallet (sponsored gas). Bounded concurrency = 5. <code>Promise.allSettled</code>, so one revert doesn't block the others.</div>
+  <div class="who">declare_campaign</div>
+  <div class="what">For each holder: <code>readContract(isPaid(id, holder))</code>. Already-paid holders are skipped. The remainder fire concurrently — up to 25 <code>pay()</code> calls in a single batch via the Privy-managed operator wallet (sponsored gas). <code>Promise.allSettled</code>, so one revert doesn't block the others. Each pay() tx hash is stitched back onto the persisted payout for basescan deep-linking.</div>
 </div>
 
 <div class="step">
   <div class="n">7</div>
-  <div class="who">Compose cron</div>
-  <div class="what">Re-reads on-chain <code>isPaid</code> for all holders. If all true → mark campaign <code>complete</code>, <code>DELETE</code> the pipeline, drop the per-campaign tables. Future ticks ignore it. Done.</div>
+  <div class="who">declare_campaign</div>
+  <div class="what">Reads <code>campaigns(id).escrowRemaining</code> on-chain. Zero → mark campaign <code>complete</code>, <code>DELETE</code> the pipeline, drop the per-campaign tables, return. Non-zero → leave the campaign in <code>paying</code> so a re-POST of the same <code>campaignId</code> resumes from where we left off.</div>
 </div>
 
 </div>
@@ -344,44 +344,51 @@
 <table class="guard">
   <thead><tr><th>Guarantee</th><th>Enforced by</th></tr></thead>
   <tbody>
-    <tr><td>No double-pay, ever</td><td>On-chain <code>require(!paid[id][holder])</code>. The cron is just a driver — correctness lives in the contract.</td></tr>
-    <tr><td>Idempotent declare</td><td>Compose collection unique key on <code>userId</code>. Duplicate POST returns the existing campaign without touching chain or spawning a second pipeline.</td></tr>
-    <tr><td>Snapshot at exact block</td><td>Operator passes <code>recordBlock</code> explicitly; the pipeline runs <code>end_block: recordBlock</code>; Turbo guarantees <code>end_block</code> data is durably flushed before the job exits. The contract also records the same block in <code>declare()</code> so the audit trail is self-consistent.</td></tr>
-    <tr><td>Crash recovery (snapshotting)</td><td>The pipeline runs in Turbo's infrastructure, not the compose pod. A pod kill mid-snapshot is a no-op: the next cron tick polls <code>/state</code> cold and resumes.</td></tr>
-    <tr><td>Crash recovery (paying)</td><td>Cron is stateless between ticks. Restart re-reads on-chain <code>isPaid</code>. Already-paid holders are skipped without an attempted tx.</td></tr>
+    <tr><td>No double-pay, ever</td><td>On-chain <code>require(!paid[id][holder])</code>. The driver is just orchestration — correctness lives in the contract.</td></tr>
+    <tr><td>Idempotent declare</td><td>Compose collection unique key on <code>userId</code>. A second POST with the same <code>campaignId</code> resumes the existing campaign without touching chain or spawning a second pipeline. Terminal states return immediately.</td></tr>
+    <tr><td>Snapshot at exact block</td><td>Operator passes <code>recordBlock</code> explicitly; the pipeline filter caps the scan at <code>recordBlock</code>; Turbo guarantees the data within the bounded range is durably flushed before the job exits. The contract also records the same block in <code>declare()</code> so the audit trail is self-consistent.</td></tr>
+    <tr><td>Crash recovery (snapshotting)</td><td>The pipeline runs in Turbo's infrastructure, not the compose pod. A pod kill mid-snapshot is a no-op: the operator re-POSTs the same <code>campaignId</code>, the resume path polls <code>/state</code> cold against the still-running pipeline.</td></tr>
+    <tr><td>Crash recovery (paying)</td><td>The driver is stateless across calls. Re-POST re-reads on-chain <code>isPaid</code>; already-paid holders are skipped without an attempted tx. The persisted <code>payouts</code> field on the campaign row reproduces the exact pro-rata that was originally computed, so resumed payouts match the original snapshot.</td></tr>
     <tr><td>Pro-rata sums to exact total</td><td>Math helper assigns floor remainder to the last holder (sorted lexicographically). No rounding drift.</td></tr>
+    <tr><td>"Done" is unambiguous</td><td>A single contract read of <code>escrowRemaining</code> decides terminality. The contract decrements it inside <code>pay()</code> with checks-effects-interactions, so reaching zero is a deterministic post-condition of the last successful pay() — not something the driver has to infer from N <code>isPaid</code> reads.</td></tr>
     <tr><td>No cross-campaign aggregate contamination</td><td>Each campaign's pipeline writes to its own <code>share_balances_&lt;id&gt;</code> table. Two concurrent campaigns can't sum into the same row.</td></tr>
     <tr><td>No orphaned infrastructure</td><td>Compose <code>DELETE</code>s the pipeline and drops the per-campaign tables on terminal. Belt-and-suspenders: even if Turbo's auto-cleanup runs first, the explicit DELETE is idempotent (a 404 is treated as success).</td></tr>
     <tr><td>Operator never holds gas</td><td><code>evm.wallet({sponsorGas: true})</code> → Privy-managed wallet with EIP-7702. Bundler pays gas, operator pays nothing.</td></tr>
+    <tr><td>Drill-down survives cleanup</td><td>Payouts (holder, shares, amount, pay tx hash) are persisted onto the campaign row in the compose collection — not just the per-campaign table. <code>list_holders</code> reads from there, so the dashboard's expanded view works long after the snapshot table has been dropped.</td></tr>
   </tbody>
 </table>
 
 <h2>What's in the repo</h2>
 
 <pre><code>compose/corporate-actions/
-├── compose.yaml                 # 2 tasks; declares GOLDSKY_PROJECT_KEY secret
+├── compose.yaml                 # 2 HTTP tasks; declares GOLDSKY_PROJECT_KEY secret
 ├── contracts/
 │   ├── ShareToken.sol           # vanilla ERC-20, pre-mints in constructor
-│   ├── DistributionCampaign.sol # escrow + paid map + recordBlock
+│   ├── DistributionCampaign.sol # escrow + paid map + recordBlock + escrowRemaining
 │   └── MockUSDC.sol             # 6-decimal payment token
 ├── scripts/
-│   ├── seed-holders.json        # 10 demo holder addresses
-│   └── deploy.sh                # forge create x3 in one pass
+│   ├── seed-holders.json        # 25-holder long-tailed distribution
+│   └── deploy.sh                # forge create x3 (or `share-token` for token-only redeploy)
 └── src/
     ├── tasks/
-    │   ├── declare-campaign.ts  # HTTP handler · ~100 lines
-    │   └── process-campaigns.ts # cron · status machine · ~200 lines
+    │   ├── declare-campaign.ts  # HTTP handler · drives the full lifecycle
+    │   └── list-holders.ts      # HTTP handler · returns persisted payouts
     └── lib/
+        ├── driver.ts            # snapshot → paying → complete state machine
         ├── turbo.ts             # /api/v1/pipelines client + pipeline definition builder
         ├── db.ts                # Neon HTTP /sql client (via context.fetch)
         ├── math.ts              # pro-rata helper
-        └── constants.ts         # CONFIG + pipeline naming helpers</code></pre>
+        ├── normalize.ts         # bytes32 / hex validation
+        ├── types.ts             # Campaign, Payout, Holder
+        └── constants.ts         # CONFIG, CONCURRENCY, poll cadence, naming helpers</code></pre>
 
-<p>Total: ~400 lines of TypeScript, no static pipeline YAML (the snapshot pipeline is generated inline at declare time), 3 small Solidity contracts.</p>
+<p>~700 lines of TypeScript, no static pipeline YAML (the snapshot pipeline is generated inline at declare time), 3 small Solidity contracts.</p>
 
 <h2>Why this shape</h2>
 
 <p><strong>One Turbo pipeline per campaign, ephemeral.</strong> Earlier iterations of this example ran an always-on streaming pipeline that maintained <code>share_balances</code> live. That works, but it forces operators to think about pipeline lifecycle (deploy, monitor, restart on schema change) for an indexer that's only needed during the brief window between declare and final payout. Job-mode + ephemeral inverts that: the operator declares an intent, compose handles every operational concern. Turbo becomes a callable subroutine, not a piece of infrastructure to babysit.</p>
+
+<p><strong>Inline drive instead of cron.</strong> An earlier shape split lifecycle work across <code>declare_campaign</code> and a 1-minute <code>process_campaigns</code> cron. The cron handoff was correct but slow — the typical campaign sat idle waiting for the next minute boundary even though the snapshot was already done. Folding everything back into <code>declare_campaign</code> means the response to the operator's POST <em>is</em> the completion signal: when the request returns, the campaign is paid out. Resume-on-re-POST gives back the crash-recovery property that the cron used to provide, without the latency.</p>
 
 <p><strong>Operator-supplied recordBlock.</strong> Real corporate actions have a record date set in advance. The snapshot is by definition backwards-looking. Putting <code>recordBlock</code> in the request body matches that mental model directly — and it makes the snapshot deterministic: anyone can re-derive the holder list at the same block from public chain data.</p>
 
