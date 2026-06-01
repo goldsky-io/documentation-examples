@@ -94,7 +94,7 @@ export function buildSnapshotPipeline(input: {
     sources: {
       transfers: {
         type: "dataset",
-        dataset_name: `${CONFIG.chain}.erc20_transfers`,
+        dataset_name: `${CONFIG.turboChain}.erc20_transfers`,
         version: "1.2.0",
         // `start_at` MUST be 'earliest' for hybrid-source / job-mode
         // semantics. Setting it to a block number makes the source

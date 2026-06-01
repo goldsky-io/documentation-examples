@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy contracts to Base mainnet.
+# Deploy contracts to Base Sepolia by default (override RPC_URL for Base mainnet).
 #
 # Usage:
 #   PRIVATE_KEY=0x... ./scripts/deploy.sh                  # all three (initial setup)
@@ -14,7 +14,7 @@
 # src/lib/constants.ts (shareToken + shareTokenDeployBlock).
 #
 # Defaults can be overridden:
-#   RPC_URL=...                  (default: https://mainnet.base.org)
+#   RPC_URL=...                  (default: https://sepolia.base.org)
 #   HOLDERS_FILE=...             (default: scripts/seed-holders.json)
 
 set -euo pipefail
@@ -26,11 +26,11 @@ case "$MODE" in
 esac
 
 if [[ -z "${PRIVATE_KEY:-}" ]]; then
-  echo "PRIVATE_KEY env var required (deployer wallet, must hold a small amount of ETH on Base)" >&2
+  echo "PRIVATE_KEY env var required (deployer wallet, must hold a small amount of Base Sepolia ETH)" >&2
   exit 1
 fi
 
-RPC_URL="${RPC_URL:-https://mainnet.base.org}"
+RPC_URL="${RPC_URL:-https://sepolia.base.org}"
 HOLDERS_FILE="${HOLDERS_FILE:-scripts/seed-holders.json}"
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
