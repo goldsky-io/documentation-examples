@@ -2,6 +2,13 @@ import { TaskContext } from "compose";
 
 import { toBytes32 } from "../lib/utils";
 
+// PriceOracle this task writes to. By default you deploy your own (see README);
+// the address below is on Polygon Amoy (the chain set just below).
+// No-deploy option: if you just want to get this running and watch the
+// PriceUpdated events without deploying anything, there is a totally open
+// PriceOracle on Base Sepolia (no access control, anyone can write) at
+// 0x53deB3fF6E6e82A3b5E96f14E185e3Fe66BF5113. To use it, set ORACLE_CONTRACT to
+// that address and change evm.chains.polygonAmoy below to evm.chains.baseSepolia.
 const ORACLE_CONTRACT = "0x34a264BCD26e114eD6C46a15d0A3Ba1873CaA708";
 
 export async function main(context: TaskContext) {
