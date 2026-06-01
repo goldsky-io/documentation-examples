@@ -55,7 +55,7 @@ In real corporate actions, the **record date** is set in advance and is the cuto
 
 - [Goldsky CLI](https://docs.goldsky.com/installation), authenticated against your project
 - [Foundry](https://book.getfoundry.sh/getting-started/installation) for the contract deploys
-- A small amount of ETH on Base mainnet for the contract deploys (~0.0005 ETH)
+- A small amount of Base Sepolia ETH, only if you deploy your own contracts (~0.0005 ETH). The repo ships pointed at shared permissionless demo contracts, so you can skip the deploy entirely.
 - A project API key for the Compose CLI (`goldsky compose deploy -t <key>`) and a separate (or same) key set as the `GOLDSKY_PROJECT_KEY` secret so the running app can manage Turbo pipelines
 
 ## Project structure
@@ -88,13 +88,15 @@ corporate-actions/
 
 ## Quick start
 
-### 1. Deploy the contracts
+This repo ships pointed at shared, permissionless demo contracts on Base Sepolia (see `src/lib/constants.ts`): MockUSDC has an open `mint` and DistributionCampaign has an open `declare()`, so anyone can run their own campaign on them. To just see it working, skip steps 1 and 4 and start at step 2. Deploy your own (step 1) only if you want an isolated instance, and see the comment in `src/lib/constants.ts` to run on Base mainnet instead.
+
+### 1. Deploy the contracts (optional)
 
 ```bash
 PRIVATE_KEY=0x... ./scripts/deploy.sh
 ```
 
-Deploys MockUSDC, ShareToken (pre-minting to the 25 seed holders), and DistributionCampaign on Base mainnet. Prints the three addresses and the ShareToken deploy block; copy them into `src/lib/constants.ts`.
+Deploys MockUSDC, ShareToken (pre-minting to the 25 seed holders), and DistributionCampaign on Base Sepolia. Prints the three addresses and the ShareToken deploy block; copy them into `src/lib/constants.ts`.
 
 ### 2. Set the project secret
 
@@ -118,7 +120,7 @@ The operator wallet address is printed in the compose app's logs on first reques
 
 ```bash
 cast send <MOCK_USDC> "mint(address,uint256)" <OPERATOR> 1000000000000 \
-  --rpc-url https://mainnet.base.org --private-key $PRIVATE_KEY
+  --rpc-url https://sepolia.base.org --private-key $PRIVATE_KEY
 ```
 
 (1,000,000 mUSDC.)
@@ -128,7 +130,7 @@ cast send <MOCK_USDC> "mint(address,uint256)" <OPERATOR> 1000000000000 \
 Pick a record block past finality:
 
 ```bash
-RECORD_BLOCK=$(cast block-number --rpc-url https://mainnet.base.org)
+RECORD_BLOCK=$(cast block-number --rpc-url https://sepolia.base.org)
 RECORD_BLOCK=$((RECORD_BLOCK - 32))
 
 curl -sX POST "https://api.goldsky.com/api/admin/compose/v1/corporate-actions/tasks/declare_campaign" \
@@ -147,7 +149,7 @@ That declares a 10,000 mUSDC distribution. The request stays open for ~10-30 sec
 
 ```bash
 cast call <DISTRIBUTION_CAMPAIGN> "getCampaign(bytes32)" <onChainId> \
-  --rpc-url https://mainnet.base.org
+  --rpc-url https://sepolia.base.org
 ```
 
 `escrowRemaining` will be exactly 0 once all 25 holders are paid. The full audit trail is in the contract's `HolderPaid` events.
