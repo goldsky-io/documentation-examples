@@ -22,6 +22,10 @@ tasks:
     triggers:
       - type: "onchain_event"
         network: "base_sepolia"
+        # No-deploy option: to try this without deploying your own contract, use
+        # the totally open RandomnessConsumer on Base Sepolia (anyone can fulfill):
+        # 0x6273AB73C95Ba2233281F1eb8aa3b21D9352AD6d. Keep this in sync with
+        # CONTRACT_ADDRESS in src/tasks/request-randomness.ts and fulfill-randomness.ts.
         contract: "0xE05Ceb3E269029E3bab46E35515e8987060D1027"
         events:
           - "RandomnessRequested(uint256,address)"
