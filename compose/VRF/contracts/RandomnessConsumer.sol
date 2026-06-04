@@ -84,7 +84,12 @@ contract RandomnessConsumer {
 
     /**
      * @notice Fulfill a randomness request with drand proof data
-     * @dev Only callable by the authorized fulfiller (Compose wallet)
+     * @dev Permissionless: any caller may fulfill so the shared example
+     *      contract is reusable by anyone without being whitelisted. Trust does
+     *      not come from the caller's identity, it comes from the stored drand
+     *      `round` + `signature`, which anyone can verify off-chain against the
+     *      drand quicknet BLS public key documented above. The `fulfiller` field
+     *      is retained only as an informational deploy-time label.
      * @param requestId The request to fulfill
      * @param randomness The random value (sha256 of signature)
      * @param round The drand round number
@@ -96,8 +101,6 @@ contract RandomnessConsumer {
         uint64 round,
         bytes calldata signature
     ) external {
-        if (msg.sender != fulfiller) revert OnlyFulfiller();
-
         RandomnessRequest storage request = requests[requestId];
         if (request.requester == address(0)) revert RequestNotFound();
         if (request.fulfilled) revert AlreadyFulfilled();
