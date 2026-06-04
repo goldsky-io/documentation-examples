@@ -1,3 +1,15 @@
+# Why a separate Turbo pipeline instead of a Compose onchain_event trigger:
+# Compose onchain_event triggers filter only by contract address + event
+# signature. There is no way to filter by an indexed argument value (maker /
+# taker), and the CTF Exchange emits roughly 3,000 OrderFilled events per
+# minute across all traders. An onchain_event trigger would therefore invoke
+# the Compose task on every fill on the entire exchange and discard 99.99% of
+# them in code. This pipeline pre-filters to the watched wallets in-warehouse
+# (maker / taker IN ...) and webhooks only matching fills.
+#
+# Once onchain_event triggers support wallet (indexed-argument) filters, this
+# whole pipeline can be deleted and folded into a single onchain_event trigger
+# on the CTF Exchange contract in compose.yaml.
 name: polymarket-ctf-events
 resource_size: s
 description: "Index Polymarket V2 CTF Exchange fills for watched wallets → webhook to Compose"
