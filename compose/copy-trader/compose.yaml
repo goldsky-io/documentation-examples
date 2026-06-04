@@ -21,6 +21,12 @@ env:
     GAMMA_HOST: "https://gamma-api.polymarket.com"
 
 tasks:
+  # copy_trade is fed by the separate Turbo pipeline (pipeline/polymarket-ctf-events.yaml),
+  # which pre-filters OrderFilled events to the watched wallets and webhooks this http task.
+  # We cannot use an onchain_event trigger here today because those triggers filter only by
+  # contract + event signature, not by indexed argument (maker / taker), so they would fire on
+  # every fill on the whole exchange (~3,000/min). Once onchain_event triggers support wallet
+  # filters, drop the pipeline and switch this task to an onchain_event trigger on the CTF Exchange.
   - name: "copy_trade"
     path: "./src/tasks/copy_trade.ts"
     triggers:
