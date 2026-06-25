@@ -1,23 +1,23 @@
 # Agent Instructions — Compose copy-trader
 
-If a user asks you to set up, configure, or deploy this example, follow the setup skill at:
+The canonical, up-to-date setup procedure for this example lives in the **Goldsky agent plugin**, not in this repo. Install it and run the skill:
 
-**`.claude/skills/compose-copy-trader-setup/SKILL.md`**
+```bash
+npx skills add goldsky-io/goldsky-agent
+```
 
-That file is the canonical procedure. It walks through CLI install, the Compose + Turbo pipeline two-phase deploy (Compose first, then pipeline — the order matters because the pipeline references the app URL), two required secrets (`PRIVATE_KEY` app-scoped and `COMPOSE_WEBHOOK_AUTH` project-scoped), the critical `WATCHED_WALLETS` match between `compose.yaml` and the pipeline YAML, funding an EOA with USDC.e on Polygon, one-time approvals, and both synthetic and live smoke tests.
+Then trigger **`/compose-copy-trader`** (or just ask your agent to "build a Polymarket copy-trader"). That skill is the single source of truth: it scaffolds from the canonical `goldsky-io/copy-trader` repo and walks the two-phase Compose-then-pipeline deploy, the two required secrets (`PRIVATE_KEY` app-scoped, `COMPOSE_WEBHOOK_AUTH` project-scoped), the `WATCHED_WALLETS` match, funding USDC.e on Polygon, one-time approvals, and synthetic + live smoke tests.
 
-This is the most complex example in this repo — do not improvise from the README. The skill has ordering constraints the README glosses over.
+This is the most complex example and trades real money on Polygon mainnet — do not improvise from this README. The skill has ordering constraints and security caveats the README glosses over.
 
 ## One-line summary
 
-Turbo pipeline indexes Polymarket `OrderFilled` events on Polygon for watched wallets → webhooks each fill to a Compose HTTP task that mirrors the trade on the Polymarket CLOB via a Fly.io proxy (CLOB is geo-blocked from US IPs). A separate cron task redeems winning shares every 5 minutes.
+Turbo pipeline indexes Polymarket `OrderFilled` events on Polygon for watched wallets → webhooks each fill to a Compose HTTP task that mirrors the trade on the Polymarket CLOB via an EU proxy (CLOB is geo-blocked from US IPs). A cron task redeems winning shares.
 
 ## Key files
 
-- `compose.yaml` — app config, env vars, secret declaration, 3 tasks (`copy_trade`, `setup_approvals`, `redeem`)
-- `pipeline/polymarket-ctf-events.yaml` — Turbo pipeline; `watched_fills` SQL at lines 62–69 must match `WATCHED_WALLETS` in `compose.yaml:12`; webhook URL at line 76 must match the deployed app name
-- `src/tasks/copy_trade.ts` — receives webhook, checks USDC balance, looks up market via Gamma, posts FAK order through CLOB proxy
-- `src/tasks/setup_approvals.ts` — idempotent one-time approvals task
-- `src/tasks/redeem.ts` — cron, redeems winning positions via the ConditionalTokens contract
+- `compose.yaml` — app config, env vars, secret declaration, tasks (`copy_trade`, `setup_approvals`, `redeem`, `status`, …)
+- `pipeline/polymarket-ctf-events.yaml` — Turbo pipeline; the `watched_fills` SQL must match `WATCHED_WALLETS` in `compose.yaml`; the webhook URL must match the deployed app name
+- `src/tasks/copy_trade.ts` — receives webhook, checks USDC balance, looks up market via Gamma, posts an order through the CLOB proxy
 - `src/lib/types.ts` — Polymarket contract addresses on Polygon; do not modify
-- `src/lib/clob.ts`, `src/lib/gamma.ts` — Polymarket API clients
+- `src/lib/clob.ts`, `src/lib/gamma.ts` — Polymarket API clients (routed through `ctx.fetch`)
