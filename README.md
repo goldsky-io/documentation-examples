@@ -15,8 +15,5 @@ Then ask your agent (Claude Code, Cursor, Codex, etc.) to build one, or trigger 
 | Example (`compose/…`) | Skill |
 | --- | --- |
 | `bitcoin-oracle` | `/compose-bitcoin-oracle` |
-| `copy-trader` | `/compose-copy-trader` |
-| `VRF` | `/compose-vrf` |
-| `corporate-actions` | `/compose-dividend-distribution` |
 
-Each skill scaffolds the example, recommends a shared no-deploy contract on Base Sepolia where applicable, and walks wiring → deploy → smoke test. The example directories here remain the runnable reference implementations; the `AGENTS.md` in each points back at its skill.
+The skill scaffolds the example, recommends a shared no-deploy contract on Base Sepolia, and walks wiring → deploy → smoke test. The example directory here remains the runnable reference implementation; its `AGENTS.md` points back at the skill.
