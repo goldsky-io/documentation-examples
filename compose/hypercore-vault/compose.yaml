@@ -1,0 +1,99 @@
+name: "hypercore-vault"
+api_version: "stable"
+
+# A Hyperliquid "vault" without a HyperCore vault and without a HyperEVM
+# contract: Compose IS the vault manager. Funds live in a Compose-managed
+# HyperCore account; the app attributes deposits, prices shares against NAV,
+# runs the strategy, and remits on validated off-chain conditions (the classic
+# Compose escrow pattern).
+
+secrets:
+  # Key for the HyperCore account that holds vault funds.
+  - VAULT_PRIVATE_KEY
+
+env:
+  cloud:
+    HYPERCORE_NETWORK: "testnet"
+    # Minimum accepted deposit, in USDC.
+    MIN_DEPOSIT: "1"
+    # Off-chain redemption conditions.
+    LOCKUP_SECONDS: "60"
+    # Redemptions above this size require the operator flag below.
+    LARGE_REDEMPTION_USDC: "1000"
+    OPERATOR_APPROVES_LARGE_REDEMPTIONS: "false"
+    # Strategy leg: a long/flat rotation on a HyperCore perp.
+    TRADE_ENABLED: "true"
+    STRATEGY_COIN: "BTC"
+    STRATEGY_ALLOCATION: "0.5"
+    STRATEGY_HOLD_SECONDS: "300"
+  local:
+    HYPERCORE_NETWORK: "testnet"
+    MIN_DEPOSIT: "1"
+    LOCKUP_SECONDS: "60"
+    LARGE_REDEMPTION_USDC: "1000"
+    OPERATOR_APPROVES_LARGE_REDEMPTIONS: "false"
+    TRADE_ENABLED: "true"
+    STRATEGY_COIN: "BTC"
+    STRATEGY_ALLOCATION: "0.5"
+    STRATEGY_HOLD_SECONDS: "300"
+
+tasks:
+  # Attribute inbound USDC transfers to depositors and mint NAV-priced shares.
+  - path: "./src/tasks/index-deposits.ts"
+    name: "index_deposits"
+    triggers:
+      - type: "cron"
+        expression: "* * * * *"
+      - type: "http"
+        authentication: "none"
+    retry_config:
+      max_attempts: 1
+      initial_interval_ms: 1000
+      backoff_factor: 1
+
+  # Manager loop: record a NAV snapshot each cycle (and trade, when enabled).
+  - path: "./src/tasks/strategy.ts"
+    name: "strategy"
+    triggers:
+      - type: "cron"
+        expression: "*/5 * * * *"
+      - type: "http"
+        authentication: "none"
+    retry_config:
+      max_attempts: 1
+      initial_interval_ms: 1000
+      backoff_factor: 1
+
+  # Read model for the demo UI.
+  - path: "./src/tasks/vault-state.ts"
+    name: "vault_state"
+    triggers:
+      - type: "http"
+        authentication: "none"
+    retry_config:
+      max_attempts: 2
+      initial_interval_ms: 500
+      backoff_factor: 2
+
+  # (Re)initialize the vault: fresh baseline, cleared ledger.
+  - path: "./src/tasks/create-vault.ts"
+    name: "create_vault"
+    triggers:
+      - type: "http"
+        authentication: "none"
+    retry_config:
+      max_attempts: 1
+      initial_interval_ms: 1000
+      backoff_factor: 1
+
+  # POST { "depositor": "0x...", "shares": "10" } -> validates the off-chain
+  # conditions, then remits the NAV-priced payout from the vault account.
+  - path: "./src/tasks/redeem.ts"
+    name: "redeem"
+    triggers:
+      - type: "http"
+        authentication: "none"
+    retry_config:
+      max_attempts: 1
+      initial_interval_ms: 1000
+      backoff_factor: 1
