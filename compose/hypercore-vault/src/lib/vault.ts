@@ -204,6 +204,100 @@ export function sharesForDeposit(
   return amountUsdc * (existingShares / navBeforeUsdc);
 }
 
+interface PerpMeta {
+  universe: { name: string; szDecimals: number }[];
+}
+
+/**
+ * Marketable IOC: price crosses the spread by 1% so the order fills or dies.
+ * Perp prices allow at most 5 significant figures and (6 - szDecimals) decimals.
+ */
+export async function submitIoc(
+  ctx: TaskContext,
+  network: HypercoreNetwork,
+  wallet: IWalletLike,
+  assetIndex: number,
+  isBuy: boolean,
+  size: number,
+  mid: number,
+  szDecimals: number,
+) {
+  const limitPx = isBuy ? mid * 1.01 : mid * 0.99;
+  const px = Number(limitPx.toPrecision(5)).toFixed(Math.max(0, 6 - szDecimals));
+  await ctx.hypercore.trade.order(network, wallet, {
+    orders: [{
+      a: assetIndex,
+      b: isBuy,
+      p: String(Number(px)),
+      s: String(size),
+      r: false,
+      t: { limit: { tif: "Ioc" } },
+    }],
+    grouping: "na",
+  });
+}
+
+// The wallet object from ctx.evm.wallet(); only passed through to ctx.hypercore.
+type IWalletLike = Parameters<TaskContext["hypercore"]["trade"]["order"]>[1];
+
+/**
+ * Flatten any open strategy position on `coin`. Returns true if it traded.
+ * Used both by the strategy rotation and by redemptions that need the capital
+ * back — a depositor's exit must not be blocked by the manager's position.
+ */
+export async function closeOpenPosition(
+  ctx: TaskContext,
+  network: HypercoreNetwork,
+  wallet: IWalletLike,
+  vaultAddress: string,
+  coin: string,
+): Promise<boolean> {
+  const perps = await ctx.hypercore.info.clearinghouseState<PerpsState>(network, vaultAddress);
+  const open = perps.assetPositions.find(
+    (p: PerpsState["assetPositions"][number]) => p.position.coin === coin,
+  );
+  const size = Number(open?.position.szi ?? 0);
+  if (size === 0) return false;
+
+  const meta = await ctx.hypercore.info<PerpMeta>(network, { type: "meta" });
+  const assetIndex = meta.universe.findIndex((u: { name: string }) => u.name === coin);
+  if (assetIndex < 0) throw new Error(`perp ${coin} not found in meta`);
+  const mids = await ctx.hypercore.info.allMids(network);
+  const mid = Number(mids[coin]);
+  if (!mid) throw new Error(`no mid price for ${coin}`);
+
+  await submitIoc(
+    ctx,
+    network,
+    wallet,
+    assetIndex,
+    size < 0,
+    Math.abs(size),
+    mid,
+    meta.universe[assetIndex].szDecimals,
+  );
+  return true;
+}
+
+/** Move perps margin back to the spot balance so payouts can be made. */
+export async function sweepMarginToSpot(
+  ctx: TaskContext,
+  network: HypercoreNetwork,
+  wallet: IWalletLike,
+  vaultAddress: string,
+  amountUsdc: number,
+): Promise<number> {
+  const perps = await ctx.hypercore.info.clearinghouseState<PerpsState>(network, vaultAddress);
+  const withdrawable = Number(perps.withdrawable ?? 0);
+  const move = Math.min(amountUsdc, withdrawable);
+  if (move <= 0) return 0;
+  await ctx.hypercore.transfer.usdClassTransfer(network, wallet, {
+    amount: formatUsdc(move),
+    toPerp: false,
+  });
+  return move;
+}
+
 /** USDC amount formatted for HyperCore transfer actions (6dp, no trailing zeros). */
 export function formatUsdc(amount: number): string {
   return String(Number(amount.toFixed(6)));

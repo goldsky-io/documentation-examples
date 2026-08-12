@@ -6,6 +6,7 @@
 // or leaves the vault flat — no resting orders to reconcile.
 import type { TaskContext } from "compose";
 import {
+  closeOpenPosition,
   type CursorRecord,
   type FillRecord,
   formatUsdc,
@@ -15,6 +16,7 @@ import {
   type Position,
   readConfig,
   readNav,
+  submitIoc,
   totalShares,
   type VaultRecord,
 } from "../lib/vault.ts";
@@ -46,7 +48,9 @@ export async function main(ctx: TaskContext) {
   const { nav, accountValue } = await readNav(ctx, config.network, wallet.address, vaults);
   const shares = await totalShares(positions);
 
-  if (config.tradeEnabled && nav > 0) {
+  // Note the gate is NOT `nav > 0`: an open position must still be closeable
+  // after the last depositor leaves, or it is stranded with nobody to unwind it.
+  if (config.tradeEnabled) {
     await runStrategy(ctx, config, wallet, nav, accountValue.spotUsdc, cursors);
   }
 
@@ -100,14 +104,16 @@ async function runStrategy(
       console.log(`holding ${config.strategyCoin} position for another ${Math.ceil(config.strategyHoldSeconds - heldSeconds)}s`);
       return;
     }
-    // Close: sell what we hold, crossing the spread.
-    await submitIoc(ctx, config, wallet, assetIndex, false, Math.abs(positionSize), mid, szDecimals);
+    // Close: flatten via the shared unwind path (also used by redemptions).
+    await closeOpenPosition(ctx, config.network, wallet, wallet.address, config.strategyCoin);
     await cursors.setById("position_opened", { id: "position_opened", lastTime: 0 });
     console.log(`closed ${config.strategyCoin} position of ${positionSize}`);
     return;
   }
 
-  // Flat: open a long sized to the allocated slice of NAV.
+  // Flat: only open when there is depositor capital to trade.
+  if (nav <= 0) return;
+
   const perpsMargin = Number(perps.withdrawable ?? 0);
   const targetMargin = nav * config.strategyAllocation;
   if (perpsMargin < targetMargin && spotUsdc > 0) {
@@ -127,36 +133,9 @@ async function runStrategy(
     console.log(`NAV ${formatUsdc(nav)} too small to open a ${config.strategyCoin} position`);
     return;
   }
-  await submitIoc(ctx, config, wallet, assetIndex, true, size, mid, szDecimals);
+  await submitIoc(ctx, config.network, wallet, assetIndex, true, size, mid, szDecimals);
   await cursors.setById("position_opened", { id: "position_opened", lastTime: Date.now() });
   console.log(`opened ${size} ${config.strategyCoin} (~${formatUsdc(notional)} USDC notional)`);
-}
-
-/** Marketable IOC: price crosses the spread by 1% so the order fills or dies. */
-async function submitIoc(
-  ctx: TaskContext,
-  config: ReturnType<typeof readConfig>,
-  wallet: Awaited<ReturnType<typeof getVaultWallet>>,
-  assetIndex: number,
-  isBuy: boolean,
-  size: number,
-  mid: number,
-  szDecimals: number,
-) {
-  const limitPx = isBuy ? mid * 1.01 : mid * 0.99;
-  // Perp prices allow at most 6 significant figures and (6 - szDecimals) decimals.
-  const px = Number(limitPx.toPrecision(5)).toFixed(Math.max(0, 6 - szDecimals));
-  await ctx.hypercore.trade.order(config.network, wallet, {
-    orders: [{
-      a: assetIndex,
-      b: isBuy,
-      p: String(Number(px)),
-      s: String(size),
-      r: false,
-      t: { limit: { tif: "Ioc" } },
-    }],
-    grouping: "na",
-  });
 }
 
 /** Pull recent fills into a collection so the UI can show real execution. */

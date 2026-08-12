@@ -4,12 +4,16 @@
 //
 // POST { "depositor": "0x...", "shares": "10" }   (omit shares to redeem all)
 import type { TaskContext } from "compose";
+import { indexPendingDeposits } from "../lib/deposits.ts";
 import {
+  closeOpenPosition,
   formatUsdc,
   getVaultWallet,
   type Position,
   readConfig,
   readNav,
+  readAccountValue,
+  sweepMarginToSpot,
   totalShares,
   type VaultRecord,
 } from "../lib/vault.ts";
@@ -50,9 +54,14 @@ export async function main(ctx: TaskContext, params: RedeemParams) {
     );
   }
 
+  // Settle any deposit that has landed but not been credited yet: NAV already
+  // includes that capital, so pricing a redemption before crediting it would
+  // pay this depositor out of money that belongs to the pending one.
+  await indexPendingDeposits(ctx, config, wallet.address);
+
   const { nav, accountValue } = await readNav(ctx, config.network, wallet.address, vaults);
   const shares = await totalShares(positions);
-  const payout = shares > 0 ? (requested / shares) * nav : 0;
+  let payout = shares > 0 ? (requested / shares) * nav : 0;
 
   if (payout > config.largeRedemptionUsdc && !config.operatorApprovesLargeRedemptions) {
     throw new Error(
@@ -60,15 +69,42 @@ export async function main(ctx: TaskContext, params: RedeemParams) {
         `threshold and operator approval is off`,
     );
   }
-  if (payout > nav) {
-    throw new Error(`payout ${formatUsdc(payout)} exceeds vault NAV ${formatUsdc(nav)}`);
+
+  // Payouts leave from the spot balance, but the strategy parks capital as
+  // perps margin. A depositor's exit must not depend on the manager's position
+  // timing, so unwind exactly as much as the payout needs.
+  let spotUsdc = accountValue.spotUsdc;
+  if (payout > spotUsdc) {
+    const closed = await closeOpenPosition(
+      ctx,
+      config.network,
+      wallet,
+      wallet.address,
+      config.strategyCoin,
+    );
+    if (closed) console.log(`closed the ${config.strategyCoin} position to fund a redemption`);
+    const swept = await sweepMarginToSpot(
+      ctx,
+      config.network,
+      wallet,
+      wallet.address,
+      payout - spotUsdc,
+    );
+    if (swept > 0) console.log(`swept ${formatUsdc(swept)} USDC of margin back to spot`);
+
+    // Unwinding costs spread and fees, which changes NAV. Re-price the exit
+    // against the post-unwind NAV so the leaving depositor bears their own
+    // exit cost instead of the remaining holders eating it.
+    const after = await readNav(ctx, config.network, wallet.address, vaults);
+    payout = shares > 0 ? (requested / shares) * after.nav : 0;
+    spotUsdc = after.accountValue.spotUsdc;
+    console.log(`re-priced payout to ${formatUsdc(payout)} USDC after unwinding`);
   }
-  // Payouts leave from the spot balance; capital parked as perps margin has to
-  // be unwound by the strategy first rather than silently under-paying.
-  if (payout > accountValue.spotUsdc) {
+
+  if (payout > spotUsdc) {
     throw new Error(
-      `payout ${formatUsdc(payout)} exceeds liquid spot balance ` +
-        `${formatUsdc(accountValue.spotUsdc)} — strategy capital must be unwound first`,
+      `payout ${formatUsdc(payout)} exceeds the liquid balance ` +
+        `${formatUsdc(spotUsdc)} available after unwinding the strategy`,
     );
   }
   if (payout <= 0) throw new Error("computed payout is zero");

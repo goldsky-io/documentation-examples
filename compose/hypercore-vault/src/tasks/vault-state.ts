@@ -1,5 +1,6 @@
 // Read model for the demo UI: everything about the vault in one call.
 import type { TaskContext } from "compose";
+import { indexPendingDeposits } from "../lib/deposits.ts";
 import {
   type FillRecord,
   formatUsdc,
@@ -20,6 +21,10 @@ export async function main(ctx: TaskContext) {
   const snapshotStore = await ctx.collection<NavSnapshot>("nav_snapshots");
   const fillStore = await ctx.collection<FillRecord>("fills");
   const vaults = await ctx.collection<VaultRecord>("vault");
+
+  // Credit pending deposits first, otherwise NAV (live from chain) is divided
+  // by a stale share count and the UI shows a phantom share-price spike.
+  await indexPendingDeposits(ctx, config, wallet.address);
 
   const { nav, accountValue, vault } = await readNav(
     ctx,
