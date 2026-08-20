@@ -1,0 +1,52 @@
+name: "hypercore-copy-trader"
+api_version: "preview" # ctx.hypercore (compose #449, released in 0.11.0)
+
+# Whale copy-trader for Hyperliquid HyperCore.
+# A Turbo pipeline streams hypercore.fills (mainnet) with notional >=
+# MIN_FILL_NOTIONAL into the copy_trade task via webhook; the task mirrors
+# each fill at MIRROR_RATIO of the whale size as an IOC order on testnet.
+
+secrets:
+  - COPY_TRADER_PRIVATE_KEY
+
+env:
+  cloud:
+    HYPERCORE_NETWORK: "testnet"
+    # Mirror fraction of the whale's fill size.
+    MIRROR_RATIO: "0.001"
+    # Only mirror fills at or above this notional (USD). The pipeline filters
+    # at the same threshold; this is defense in depth.
+    MIN_FILL_NOTIONAL: "10000"
+    # Hard cap on a single mirror order's notional (USD).
+    MAX_ORDER_NOTIONAL: "25"
+    # Coins the bot may trade (comma-separated). Others are skipped.
+    COIN_ALLOWLIST: "BTC,ETH,SOL,HYPE"
+  local:
+    HYPERCORE_NETWORK: "testnet"
+    MIRROR_RATIO: "0.001"
+    MIN_FILL_NOTIONAL: "10000"
+    MAX_ORDER_NOTIONAL: "25"
+    COIN_ALLOWLIST: "BTC,ETH,SOL,HYPE"
+
+tasks:
+  # Receives one hypercore.fills row per webhook POST from the Turbo pipeline.
+  - path: "./src/tasks/copy-trade.ts"
+    name: "copy_trade"
+    triggers:
+      - type: "http"
+        authentication: "none"
+    retry_config:
+      max_attempts: 1
+      initial_interval_ms: 1000
+      backoff_factor: 1
+
+  # Sanity check: wallet address, balances, open positions, recent mirror fills.
+  - path: "./src/tasks/status.ts"
+    name: "status"
+    triggers:
+      - type: "http"
+        authentication: "none"
+    retry_config:
+      max_attempts: 1
+      initial_interval_ms: 1000
+      backoff_factor: 1
