@@ -1,0 +1,43 @@
+name: "hip4-oracle"
+api_version: "stable"
+
+secrets:
+  # Hyperliquid outcome-deployer key (venue owner + oracle updater).
+  - DEPLOYER_PRIVATE_KEY
+
+env:
+  cloud:
+    HYPERCORE_NETWORK: "testnet"
+    VENUE: "gsky"
+    # Comma-separated Hyperliquid perp names to run up/down markets for.
+    PERPS: "BTC"
+    MARKET_DURATION_MINUTES: "30"
+  local:
+    HYPERCORE_NETWORK: "testnet"
+    VENUE: "gsky"
+    PERPS: "BTC"
+    MARKET_DURATION_MINUTES: "15"
+
+tasks:
+  # Deploy fresh Polymarket-style up/down markets (strike = current mark).
+  - path: "./src/tasks/create-markets.ts"
+    name: "create_markets"
+    triggers:
+      - type: "cron"
+        expression: "*/15 * * * *"
+    retry_config:
+      max_attempts: 1
+      initial_interval_ms: 1000
+      backoff_factor: 1
+
+  # Settle any expired markets against the mark price. Idempotent by
+  # registry state; safe to run every minute.
+  - path: "./src/tasks/settle-markets.ts"
+    name: "settle_markets"
+    triggers:
+      - type: "cron"
+        expression: "* * * * *"
+    retry_config:
+      max_attempts: 1
+      initial_interval_ms: 1000
+      backoff_factor: 1

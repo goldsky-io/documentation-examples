@@ -1,0 +1,42 @@
+name: hypercore-whale-fills
+resource_size: s
+use_dedicated_ip: false
+
+# Streams hypercore.fills (Hyperliquid mainnet), keeps whale-sized fills
+# (>= $10k notional), and webhooks each one to the hypercore-copy-trader
+# compose app, which mirrors it at 0.001x on testnet.
+sources:
+  fills:
+    dataset_name: hypercore.fills
+    type: dataset
+    version: 1.0.0
+    start_at: latest
+
+transforms:
+  whale_fills:
+    type: sql
+    primary_key: id
+    sql: |
+      SELECT
+        id,
+        block_number,
+        timestamp,
+        user,
+        coin,
+        side,
+        dir,
+        price,
+        size,
+        hash,
+        order_id,
+        trade_id
+      FROM fills
+      WHERE CAST(price AS DOUBLE) * CAST(size AS DOUBLE) >= 10000
+
+sinks:
+  compose_endpoint:
+    type: webhook
+    from: whale_fills
+    one_row_per_request: true
+    # Replace <your-project-id> with your Goldsky project id (Settings -> Project).
+    url: https://api.goldsky.com/api/public/compose/v1/<your-project-id>/hypercore-copy-trader/tasks/copy_trade
