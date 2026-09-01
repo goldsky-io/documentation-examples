@@ -1,0 +1,24 @@
+name: turnkey-policy-demo
+# webhookWallet ships in FOU-1108. Use stable once that release is out.
+api_version: internal-fou-1108-webhook-wallet
+
+secrets:
+  - SIGN_WEBHOOK_TOKEN
+
+env:
+  cloud:
+    SIGN_WEBHOOK_URL: "https://your-signer.example.com/sign"
+    WALLET_ADDRESS: "0xYourTurnkeyWallet"
+
+tasks:
+  - name: ping
+    path: src/tasks/ping.ts
+    triggers:
+      - type: http
+        authentication: auth_token
+
+  - name: forbidden
+    path: src/tasks/forbidden.ts
+    triggers:
+      - type: http
+        authentication: auth_token

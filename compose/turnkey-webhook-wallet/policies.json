@@ -1,0 +1,23 @@
+[
+  {
+    "policyName": "compose-auto-sign-userops-v1",
+    "effect": "EFFECT_ALLOW",
+    "consensus": "approvers.any(user, user.id == '<COMPOSE_USER_ID>')",
+    "condition": "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && activity.params.encoding == 'PAYLOAD_ENCODING_EIP712' && activity.params.hash_function == 'HASH_FUNCTION_NO_OP' && eth.eip_712.primary_type == 'PackedUserOperation' && eth.eip_712.domain.verifying_contract == '0x4337084d9e255ff0702461cf8895ce9e3b5ff108' && eth.eip_712.domain.chain_id == 84532 && eth.eip_712.message['sender'] == '<WALLET>' && eth.eip_712.message['callData'][0..10] == '0xb61d27f6' && eth.eip_712.message['callData'][138..202] == '0000000000000000000000000000000000000000000000000000000000000060' && (eth.eip_712.message['callData'][34..74] == '8b16f85d8d39593a02efa48c314099c4e719aa1e' && (eth.eip_712.message['callData'][266..274] == '5c36b186'))",
+    "notes": "Compose may auto-sign v0.8 EntryPoint userOps for this account only, on this chain only, executing ping() on the demo contract only."
+  },
+  {
+    "policyName": "compose-auto-sign-7702-delegation-v1",
+    "effect": "EFFECT_ALLOW",
+    "consensus": "approvers.any(user, user.id == '<COMPOSE_USER_ID>')",
+    "condition": "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && activity.params.encoding == 'PAYLOAD_ENCODING_EIP7702_AUTHORIZATION' && eth.eip_7702_authorization.address == '0xe6Cae83BdE06E4c305530e199D7217f42808555B' && eth.eip_7702_authorization.chain_id == 84532",
+    "notes": "Compose may sign the one-time EIP-7702 delegation, but only to the audited account implementation on Base Sepolia."
+  },
+  {
+    "policyName": "compose-deny-opaque-payloads-v1",
+    "effect": "EFFECT_DENY",
+    "consensus": "approvers.any(user, user.id == '<COMPOSE_USER_ID>')",
+    "condition": "activity.type == 'ACTIVITY_TYPE_SIGN_RAW_PAYLOAD_V2' && activity.params.encoding != 'PAYLOAD_ENCODING_EIP712' && activity.params.encoding != 'PAYLOAD_ENCODING_EIP7702_AUTHORIZATION'",
+    "notes": "Compose identity cannot raw-sign digests or arbitrary bytes."
+  }
+]
