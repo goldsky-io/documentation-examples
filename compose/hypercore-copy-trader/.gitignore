@@ -1,0 +1,6 @@
+.compose/
+.env
+stage.db
+*.log
+node_modules/
+.DS_Store
