@@ -59,13 +59,15 @@ NAV = (spot USDC + perps account value) - baselineUsdc
 
 Deposits never move the price (you buy at the current price); strategy P&L does.
 
+> **Caveats:** the ledger read-then-write is not atomic, so overlapping cron runs can double-credit or race on the same position. Redeem sends USDC before burning shares, so a failure between the two leaves shares outstanding after payout.
+
 ## Compose Features Demonstrated
 
 - `ctx.hypercore.info.*` — typed HyperCore reads (`allMids`, `clearinghouseState`, `spotClearinghouseState`) plus generic `info` for ledger updates and fills
 - `ctx.hypercore.trade.order` — marketable IOC orders on a perp (L1 signing scheme)
 - `ctx.hypercore.transfer.usdClassTransfer` / `spotSend` — moving margin and paying depositors (user-signed EIP-712 scheme)
 - `ctx.collection` — durable ledger: vault record, positions, deposits, fills, NAV snapshots, cursors
-- Cron and HTTP triggers in one app; `ctx.logEvent` for an auditable deposit/redemption trail
+- Cron and HTTP triggers in one app; `console.log` for a deposit/redemption trail
 
 ## Configuration
 

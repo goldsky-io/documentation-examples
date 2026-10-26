@@ -2,9 +2,9 @@ name: hypercore-whale-fills
 resource_size: s
 use_dedicated_ip: false
 
-# Streams hypercore.fills (Hyperliquid mainnet), keeps whale-sized fills
-# (>= $10k notional), and webhooks each one to the hypercore-copy-trader
-# compose app, which mirrors it at 0.001x on testnet.
+# Streams hypercore.fills (Hyperliquid mainnet), keeps the taker (aggressor)
+# side of whale-sized fills (>= $10k notional), and webhooks each one to the
+# hypercore-copy-trader compose app, which mirrors it at 0.001x on testnet.
 sources:
   fills:
     dataset_name: hypercore.fills
@@ -31,7 +31,8 @@ transforms:
         order_id,
         trade_id
       FROM fills
-      WHERE CAST(price AS DOUBLE) * CAST(size AS DOUBLE) >= 10000
+      WHERE crossed = true
+        AND CAST(price AS DOUBLE) * CAST(size AS DOUBLE) >= 10000
 
 sinks:
   compose_endpoint:

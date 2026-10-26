@@ -1,5 +1,5 @@
 name: "hypercore-copy-trader"
-api_version: "preview" # ctx.hypercore (compose #449, released in 0.11.0)
+api_version: "stable"
 
 # Whale copy-trader for Hyperliquid HyperCore.
 # A Turbo pipeline streams hypercore.fills (mainnet) with notional >=

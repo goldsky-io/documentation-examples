@@ -2,7 +2,7 @@
 
 A [Compose](https://docs.goldsky.com/compose/introduction) + [Turbo](https://docs.goldsky.com/turbo-pipelines/introduction) example that watches whale-sized fills on Hyperliquid's HyperCore (mainnet) and mirrors each one at a tiny fraction on HyperCore **testnet** via [`ctx.hypercore`](https://docs.goldsky.com/compose/context/hypercore).
 
-Any fill with notional >= $10k counts as a whale trade. Each one is mirrored at 0.001x (capped at $25, floored at the ~$10 exchange minimum) as a marketable IOC order. On an average day this delivers dozens of events per minute, so it doubles as a live-fire test of the whole hypercore dataset -> Compose path.
+Any fill with notional >= $10k counts as a whale trade. `hypercore.fills` emits a row for both sides of every trade, so the pipeline keeps only the taker (aggressor) side with `crossed = true`; otherwise each trade would be mirrored twice. Each one is mirrored at 0.001x (capped at $25, floored at the ~$10 exchange minimum) as a marketable IOC order. On an average day this delivers dozens of events per minute, so it doubles as a live-fire test of the whole hypercore dataset -> Compose path.
 
 ## How It Works
 
@@ -12,7 +12,7 @@ Hyperliquid HyperCore (mainnet)
        ▼
   ┌──────────────────────┐
   │  Turbo Pipeline      │  hypercore.fills dataset, start_at: latest
-  │  (hypercore-whale-   │  SQL filter: price * size >= $10k
+  │  (hypercore-whale-   │  SQL filter: crossed AND price * size >= $10k
   │   fills)             │  → webhook, one fill per POST
   └──────────┬───────────┘
              │

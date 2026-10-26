@@ -18,6 +18,11 @@ import {
   type VaultRecord,
 } from "../lib/vault.ts";
 
+const USDC_TOKEN = {
+  mainnet: "USDC:0x6d1e7cde53ba9467b783cb7c530ce054",
+  testnet: "USDC:0xeb62eee3685fc4c43992febcd9e75443",
+} as const;
+
 interface RedeemParams {
   depositor?: string;
   shares?: string;
@@ -113,7 +118,7 @@ export async function main(ctx: TaskContext, params: RedeemParams) {
   const amount = formatUsdc(payout);
   const result = await ctx.hypercore.transfer.spotSend(config.network, wallet, {
     destination: depositor,
-    token: "USDC:0xeb62eee3685fc4c43992febcd9e75443",
+    token: USDC_TOKEN[config.network],
     amount,
   });
 
@@ -124,12 +129,9 @@ export async function main(ctx: TaskContext, params: RedeemParams) {
     await positions.deleteById(depositor);
   }
 
-  await ctx.logEvent({
-    code: "vault.redeem",
-    message: `remitted ${amount} USDC to ${depositor}`,
-    data: JSON.stringify({ shares: requested, navAtRedemption: formatUsdc(nav) }),
-  });
-  console.log(`redeemed ${requested} shares -> ${amount} USDC to ${depositor}`);
+  console.log(
+    `redeemed ${requested} shares -> ${amount} USDC to ${depositor} (nav ${formatUsdc(nav)})`,
+  );
 
   return {
     depositor,

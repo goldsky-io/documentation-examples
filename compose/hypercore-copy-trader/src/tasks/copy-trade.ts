@@ -29,7 +29,7 @@ interface SeenFill {
 const MIN_ORDER_NOTIONAL = 10.5; // exchange minimum is ~10 USDC
 
 export async function main(ctx: TaskContext, fill: FillRow) {
-  const { env, logEvent } = ctx;
+  const { env } = ctx;
   const network = env.HYPERCORE_NETWORK === "mainnet" ? "mainnet" : "testnet";
   const ratio = Number(env.MIRROR_RATIO ?? "0.001");
   const minFillNotional = Number(env.MIN_FILL_NOTIONAL ?? "10000");
@@ -37,7 +37,7 @@ export async function main(ctx: TaskContext, fill: FillRow) {
   const allowlist = (env.COIN_ALLOWLIST ?? "").split(",").map((c) => c.trim()).filter(Boolean);
 
   const skip = async (reason: string, data: Record<string, unknown> = {}) => {
-    await logEvent({ code: "MIRROR_SKIPPED", message: reason, data: { fill, ...data } });
+    console.log("MIRROR_SKIPPED", JSON.stringify({ reason, fill, ...data }));
     return { mirrored: false, reason };
   };
 
@@ -106,7 +106,7 @@ export async function main(ctx: TaskContext, fill: FillRow) {
     const move = Math.min(50, Math.floor(spotUsdc));
     if (move >= 5) {
       await ctx.hypercore.transfer.usdClassTransfer(network, wallet, { amount: String(move), toPerp: true });
-      await logEvent({ code: "MARGIN_TOPUP", message: `moved ${move} USDC spot -> perps`, data: { move } });
+      console.log("MARGIN_TOPUP", `moved ${move} USDC spot -> perps`);
     }
   }
 
@@ -124,10 +124,10 @@ export async function main(ctx: TaskContext, fill: FillRow) {
     });
 
     await seen.setById(fill.id, { id: fill.id, seenAt: Date.now() });
-    await logEvent({
-      code: "MIRROR_EXECUTED",
-      message: `mirrored ${fill.coin} ${isBuy ? "buy" : "sell"} ${mirrorSize} @ ~${limitPx}`,
-      data: {
+    console.log(
+      "MIRROR_EXECUTED",
+      JSON.stringify({
+        message: `mirrored ${fill.coin} ${isBuy ? "buy" : "sell"} ${mirrorSize} @ ~${limitPx}`,
         whale: fill.user,
         coin: fill.coin,
         side: fill.side,
@@ -137,15 +137,14 @@ export async function main(ctx: TaskContext, fill: FillRow) {
         orderNotional: mirrorSize * mid,
         fillId: fill.id,
         exchange: result,
-      },
-    });
+      }),
+    );
     return { mirrored: true, coin: fill.coin, mirrorSize, limitPx };
   } catch (err) {
-    await logEvent({
-      code: "MIRROR_FAILED",
-      message: err instanceof Error ? err.message : String(err),
-      data: { fill, mirrorSize, limitPx },
-    });
+    console.log(
+      "MIRROR_FAILED",
+      JSON.stringify({ message: err instanceof Error ? err.message : String(err), fill, mirrorSize, limitPx }),
+    );
     return { mirrored: false, error: err instanceof Error ? err.message : String(err) };
   }
 }

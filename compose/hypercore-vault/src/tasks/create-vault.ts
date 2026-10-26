@@ -60,11 +60,6 @@ export async function main(ctx: TaskContext, params: CreateVaultParams) {
   await cursors.setById("deposits", { id: "deposits", lastTime: now });
   await cursors.setById("fills", { id: "fills", lastTime: now });
 
-  await ctx.logEvent({
-    code: "vault.created",
-    message: `initialized vault "${record.name}"`,
-    data: JSON.stringify(record),
-  });
   console.log(`vault "${record.name}" initialized; baseline ${record.baselineUsdc} USDC`);
 
   return {

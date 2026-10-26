@@ -113,11 +113,6 @@ export async function indexPendingDeposits(
     runningNav += amount;
     runningShares += minted;
     credited += 1;
-    await ctx.logEvent({
-      code: "vault.deposit",
-      message: `credited ${formatUsdc(minted)} shares to ${depositor}`,
-      data: JSON.stringify({ hash: update.hash, amount, navBefore: runningNav - amount }),
-    });
     console.log(`credited ${formatUsdc(minted)} shares to ${depositor} for ${amount} USDC`);
   }
 
